@@ -1,0 +1,213 @@
+"""MCP HTTP endpoint views."""
+
+import json
+import contextvars
+from typing import Dict, Any, Optional
+from django.http import JsonResponse
+from django.views import View
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from .registry import registry
+from .schema import generate_tool_schema
+
+# Context variable to store Django request
+django_request_ctx = contextvars.ContextVar("django_request")
+
+@method_decorator(csrf_exempt, name='dispatch')
+class MCPView(View):
+    """Main MCP HTTP endpoint handler."""
+    
+    def post(self, request):
+        """Handle MCP requests."""
+        try:
+            # Parse the JSON-RPC request
+            body = json.loads(request.body)
+            
+            # Extract the method and params
+            method = body.get('method')
+            params = body.get('params', {})
+            request_id = body.get('id')
+            
+            # Mark this as an MCP request
+            request.is_mcp_request = True
+            
+            # Route to appropriate handler
+            if method == 'initialize':
+                result = self.handle_initialize(params)
+            elif method == 'notifications/initialized':
+                # Notifications don't expect a response
+                return JsonResponse({'status': 'ok'})
+            elif method == 'tools/list':
+                result = self.handle_tools_list(params)
+            elif method == 'tools/call':
+                result = self.handle_tools_call(request, params)
+            else:
+                # Method not found
+                return self.error_response(
+                    request_id,
+                    -32601,
+                    f"Method not found: {method}"
+                )
+            
+            # Return JSON-RPC response
+            return JsonResponse({
+                'jsonrpc': '2.0',
+                'result': result,
+                'id': request_id
+            })
+            
+        except json.JSONDecodeError:
+            return self.error_response(None, -32700, "Parse error")
+        except Exception as e:
+            return self.error_response(
+                body.get('id') if 'body' in locals() else None,
+                -32603,
+                f"Internal error: {str(e)}"
+            )
+    
+    def handle_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle initialize request."""
+        return {
+            'protocolVersion': '2025-06-18',
+            'capabilities': {
+                'tools': {}
+            },
+            'serverInfo': {
+                'name': 'django-rest-framework-mcp',
+                'version': '0.1.0'
+            }
+        }
+    
+    def handle_tools_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle tools/list request."""
+        tools = []
+        
+        for tool_info in registry.get_all_tools():
+            tool_schema = generate_tool_schema(
+                tool_info['viewset_class'],
+                tool_info['action']
+            )
+            
+            tools.append({
+                'name': tool_info['name'],
+                'description': tool_info['description'],
+                'inputSchema': tool_schema['inputSchema']
+            })
+        
+        return {'tools': tools}
+    
+    def handle_tools_call(self, request, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle tools/call request."""
+        tool_name = params.get('name')
+        tool_params = params.get('arguments', {})
+        
+        try:
+            # Find the tool
+            tool_info = registry.get_tool_by_name(tool_name)
+            if not tool_info:
+                # This should be handled as a protocol-level error, not a tool execution error
+                raise Exception(f"Tool not found: {tool_name}")
+            
+            # Execute the tool
+            result = self.execute_tool(request, tool_info, tool_params)
+            
+            # Format the response
+            return {
+                'content': [
+                    {
+                        'type': 'text', 
+                        'text': json.dumps(result, default=str)
+                    }
+                ]
+            }
+            
+        except Exception as e:
+            return {
+                'content': [
+                    {
+                        'type': 'text',
+                        'text': f"Error executing tool: {str(e)}"
+                    }
+                ],
+                'isError': True
+            }
+    
+    def execute_tool(self, request, tool_info: Dict[str, Any], 
+                    params: Dict[str, Any]) -> Any:
+        """Execute a tool by calling the corresponding ViewSet action."""
+        executor = MCPToolExecutor()
+        return executor.execute_tool(request, tool_info, params)
+    
+    def error_response(self, request_id: Optional[Any], code: int, 
+                      message: str) -> JsonResponse:
+        """Create a JSON-RPC error response."""
+        return JsonResponse({
+            'jsonrpc': '2.0',
+            'error': {
+                'code': code,
+                'message': message
+            },
+            'id': request_id
+        })
+
+
+class MCPToolExecutor:
+    """Helper class to execute MCP tools."""
+    
+    def execute_tool(self, request, tool_info: Dict[str, Any], params: Dict[str, Any]) -> Any:
+        """Execute a tool by calling the corresponding ViewSet action method directly."""
+        viewset_class = tool_info['viewset_class']
+        action = tool_info['action']
+        
+        # Create ViewSet instance with proper DRF setup
+        viewset = viewset_class()
+        
+        # Set up the request context properly
+        viewset.request = request
+        viewset.action = action
+        viewset.format_kwarg = None
+        viewset.args = []
+        viewset.kwargs = {}
+        
+        # Mark request as coming from MCP
+        request.is_mcp_request = True
+        
+        # Prepare arguments for the action method
+        method_args = [request]
+        method_kwargs = {}
+        
+        # Handle actions that need ID parameter
+        if action in ['retrieve', 'update', 'partial_update', 'destroy']:
+            pk = params.pop('id', None) if action in ['update', 'partial_update'] else params.get('id')
+            if not pk:
+                raise ValueError(f"ID parameter is required for {action} action")
+            viewset.kwargs = {'pk': pk}
+            method_kwargs['pk'] = pk
+        
+        # Handle actions that need request data
+        if action in ['create', 'update', 'partial_update']:
+            request.data = params
+        
+        # Get the method dynamically and call it
+        if not hasattr(viewset, action):
+            raise ValueError(f"ViewSet does not support action: {action}")
+            
+        action_method = getattr(viewset, action)
+        response = action_method(*method_args, **method_kwargs)
+        
+        # Handle DRF Response objects
+        if hasattr(response, 'data'):
+            # Handle DRF error responses
+            if response.status_code >= 400:
+                raise ValueError(f"ViewSet returned error: {response.data}")
+            
+            # Handle successful responses
+            if response.data is not None:
+                return response.data
+            else:
+                # For responses like 204 No Content (destroy), return a success message
+                if response.status_code == 204:
+                    return {"message": "Operation completed successfully"}
+                return {"message": "Success"}
+        
+        return response

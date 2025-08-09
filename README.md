@@ -24,14 +24,14 @@ INSTALLED_APPS = [
 ```python
 urlpatterns = [
     # ... your other URL patterns
-    path('', include('djangorestframework_mcp.urls')),
+    path('mcp/', include('djangorestframework_mcp.urls')),
 ]
 ```
 
 4. Transform any DRF ViewSet into MCP tools with a single decorator:
 
 ```python
-from djangorestframework_mcp import mcp_tool
+from djangorestframework_mcp.decorators import mcp_tool
 
 @mcp_tool()
 class CustomerViewSet(ModelViewSet):
@@ -309,7 +309,7 @@ In all subdirectories below this one, the information that we want to give to CL
 #### 1. Clone and Install
 
 ```bash
-git clone https://github.com/yourusername/django-rest-framework-mcp.git
+git clone https://github.com/zacharypodbela/django-rest-framework-mcp.git
 cd django-rest-framework-mcp
 
 # Install the library in development mode with test dependencies
