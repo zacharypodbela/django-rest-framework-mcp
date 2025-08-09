@@ -113,14 +113,17 @@ def serializer_to_json_schema(serializer_class: Type[serializers.Serializer],
 
 def generate_tool_schema(viewset_class: Type[ViewSetMixin], action: str) -> Dict[str, Any]:
     """
-    Generate MCP tool schema for a ViewSet action.
+    Generate MCP tool schema for a ViewSet action using kwargs+body structure.
+    
+    This separates method arguments (kwargs) from request data (body) to make
+    it easier to map MCP parameters to ViewSet method calls.
     
     Args:
         viewset_class: The ViewSet class.
         action: The action name (list, retrieve, create, etc.).
     
     Returns:
-        MCP tool schema dict.
+        MCP tool schema dict with structured input.
     """
     schema: Dict[str, Any] = {
         'inputSchema': {
@@ -146,46 +149,52 @@ def generate_tool_schema(viewset_class: Type[ViewSetMixin], action: str) -> Dict
     elif hasattr(viewset_class, 'serializer_class'):
         serializer_class = viewset_class.serializer_class
     
-    # Generate input schema based on action
-    if action == 'list':
-        # List action might have filter parameters
-        # For MVP, we'll start simple
-        pass
-    elif action == 'retrieve':
-        # Retrieve needs an ID parameter
-        schema['inputSchema']['properties']['id'] = {
+    # Generate structured input schema based on action
+    properties = {}
+    required = []
+    
+    # Generate kwargs schema (method arguments)
+    kwargs_properties = {}
+    kwargs_required = []
+    
+    if action in ['retrieve', 'update', 'partial_update', 'destroy']:
+        # These actions need a pk in kwargs
+        kwargs_properties['pk'] = {
             'type': 'string',
-            'description': 'The ID of the resource to retrieve'
+            'description': 'The primary key of the resource'
         }
-        schema['inputSchema']['required'] = ['id']
-    elif action == 'create':
-        # Create needs the full serializer as input
-        if serializer_class:
-            input_schema = serializer_to_json_schema(serializer_class, for_input=True)
-            schema['inputSchema'] = input_schema
-    elif action == 'update' or action == 'partial_update':
-        # Update needs ID plus the serializer fields
-        schema['inputSchema']['properties']['id'] = {
-            'type': 'string',
-            'description': 'The ID of the resource to update'
+        kwargs_required.append('pk')
+    
+    if action == 'partial_update':
+        # partial_update also needs partial=True in kwargs
+        kwargs_properties['partial'] = {
+            'type': 'boolean',
+            'description': 'Whether this is a partial update',
+            'default': True
         }
-        schema['inputSchema']['required'] = ['id']
+    
+    # Add kwargs to schema if needed
+    if kwargs_properties:
+        properties['kwargs'] = {
+            'type': 'object',
+            'properties': kwargs_properties,
+            'required': kwargs_required if kwargs_required else []
+        }
+        if kwargs_required:
+            required.append('kwargs')
+    
+    # Generate body schema (request.data)
+    if action in ['create', 'update', 'partial_update'] and serializer_class:
+        body_schema = serializer_to_json_schema(serializer_class, for_input=True)
+        properties['body'] = body_schema
         
-        if serializer_class:
-            input_schema = serializer_to_json_schema(serializer_class, for_input=True)
-            # Merge the serializer properties
-            schema['inputSchema']['properties'].update(input_schema.get('properties', {}))
-            
-            # For partial_update, no additional fields are required
-            if action == 'update':
-                # For full update, add serializer required fields
-                schema['inputSchema']['required'].extend(input_schema.get('required', []))
-    elif action == 'destroy':
-        # Destroy needs an ID parameter
-        schema['inputSchema']['properties']['id'] = {
-            'type': 'string',
-            'description': 'The ID of the resource to delete'
-        }
-        schema['inputSchema']['required'] = ['id']
+        # For create and update (but not partial_update), body is required if it has required fields
+        if action in ['create', 'update'] and body_schema.get('required'):
+            required.append('body')
+    
+    # Set the final schema
+    schema['inputSchema']['properties'] = properties
+    if required:
+        schema['inputSchema']['required'] = required
     
     return schema

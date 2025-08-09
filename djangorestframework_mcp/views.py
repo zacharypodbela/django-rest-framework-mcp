@@ -132,12 +132,6 @@ class MCPView(View):
                 'isError': True
             }
     
-    def execute_tool(self, request, tool_info: Dict[str, Any], 
-                    params: Dict[str, Any]) -> Any:
-        """Execute a tool by calling the corresponding ViewSet action."""
-        executor = MCPToolExecutor()
-        return executor.execute_tool(request, tool_info, params)
-    
     def error_response(self, request_id: Optional[Any], code: int, 
                       message: str) -> JsonResponse:
         """Create a JSON-RPC error response."""
@@ -150,12 +144,9 @@ class MCPView(View):
             'id': request_id
         })
 
-
-class MCPToolExecutor:
-    """Helper class to execute MCP tools."""
-    
-    def execute_tool(self, request, tool_info: Dict[str, Any], params: Dict[str, Any]) -> Any:
-        """Execute a tool by calling the corresponding ViewSet action method directly."""
+    def execute_tool(self, request, tool_info: Dict[str, Any], 
+                    params: Dict[str, Any]) -> Any:
+        """Execute a tool using the structured kwargs+body parameter format."""
         viewset_class = tool_info['viewset_class']
         action = tool_info['action']
         
@@ -172,28 +163,28 @@ class MCPToolExecutor:
         # Mark request as coming from MCP
         request.is_mcp_request = True
         
-        # Prepare arguments for the action method
-        method_args = [request]
-        method_kwargs = {}
+        # Extract structured parameters
+        method_kwargs = params.get('kwargs', {})
+        body_data = params.get('body', {})
         
-        # Handle actions that need ID parameter
-        if action in ['retrieve', 'update', 'partial_update', 'destroy']:
-            pk = params.pop('id', None) if action in ['update', 'partial_update'] else params.get('id')
-            if not pk:
-                raise ValueError(f"ID parameter is required for {action} action")
-            viewset.kwargs = {'pk': pk}
-            method_kwargs['pk'] = pk
+        # Set up ViewSet kwargs from method_kwargs
+        if method_kwargs:
+            viewset.kwargs = method_kwargs.copy()
         
-        # Handle actions that need request data
-        if action in ['create', 'update', 'partial_update']:
-            request.data = params
+        # Set up request data from body
+        # Django requests don't have 'data' attribute by default, so we need to add it
+        if body_data:
+            request.data = body_data
+        else:
+            # Ensure request.data exists even if empty
+            request.data = {}
         
         # Get the method dynamically and call it
         if not hasattr(viewset, action):
             raise ValueError(f"ViewSet does not support action: {action}")
             
         action_method = getattr(viewset, action)
-        response = action_method(*method_args, **method_kwargs)
+        response = action_method(request, **method_kwargs)
         
         # Handle DRF Response objects
         if hasattr(response, 'data'):
