@@ -24,7 +24,7 @@ INSTALLED_APPS = [
 ```python
 urlpatterns = [
     # ... your other URL patterns
-    path('mcp/', include('djangorestframework_mcp.urls')),
+    path('', include('djangorestframework_mcp.urls')),
 ]
 ```
 
@@ -53,7 +53,7 @@ The library automatically:
 - Preserves your existing permissions, authentication, and filtering
 - Provides helpful error messages to guide LLMs
 
-5. Connect any MCP client to `http://localhost:8000/mcp/` try it out!
+5. Connect any MCP client to `http://localhost:8000/mcp/` and try it out!
 
 ## Connecting a STDIO MCP Client
 
@@ -65,12 +65,7 @@ Follow these instructions to use `mcp-remote` to connect to Claude Desktop:
 
 1. Install mcp-remote: `npm install -g mcp-remote`
 
-2. Open Claude Desktop Configuration for editing:
-
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-3. Add your server configuration:
+2. Open Claude MCP Desktop Configuration by going to Settings > Developer > Edit Config and add your server configuration:
 
 ```json
 {
@@ -79,7 +74,7 @@ Follow these instructions to use `mcp-remote` to connect to Claude Desktop:
       "command": "node",
       "args": [
         "path/to/mcp-remote",
-        "http://localhost:8000/mcp",
+        "http://localhost:8000/mcp/",
         "--transport",
         "http-only"
       ]
@@ -88,19 +83,16 @@ Follow these instructions to use `mcp-remote` to connect to Claude Desktop:
 }
 ```
 
-4. Restart Claude Desktop and test your tools
+3. Restart Claude Desktop and test your tools
 
 ## Advanced Configuration
 
 ### Custom Tool Names and Descriptions
 
-Override the default tool names and add descriptions to help LLMs understand your tools better:
+Override the default tool names to help LLMs understand your tools better:
 
 ```python
-@mcp_tool(
-    name="customer_management",
-    description="Manage customer records in the CRM system"
-)
+@mcp_tool(name="customer_management")
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
@@ -262,14 +254,13 @@ class CustomerMCPTests(MCPTestCase):
 
 ### Decorators
 
-#### `@mcp_tool(name=None, description=None)`
+#### `@mcp_tool(name=None)`
 
 Decorator for ViewSets to expose as MCP tools.
 
 **Parameters:**
 
 - `name` (str, optional): Custom name for the tool set. Defaults to the ViewSet's model name.
-- `description` (str, optional): Description to help LLMs understand the tool's purpose.
 
 #### `@mcp_tool.action(name=None, description=None)`
 
