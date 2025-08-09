@@ -16,7 +16,6 @@ The repository includes offline documentation in `/external-docs`:
 Full source code of select important dependencies is available in `/source-code-of-dependencies` for deep integration reference. You should never write any code in these files, since this code is not actually running. It's there for you to read and understand.
 
 - `encode:django-rest-framework`: Complete Django REST Framework source code for understanding ViewSet patterns, serializer implementations, request/response handling, etc.
-- `modelcontextprotocol:python-sdk`: Official MCP Python SDK source code for reference. Note: We use manual JSON-RPC implementation instead of the SDK for better Django integration (no ASGI conversion needed, simpler DRF ViewSet bridging).
 
 The `/src` directory contains the actual `django-rest-framework-mcp` library code.
 
