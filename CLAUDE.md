@@ -13,13 +13,15 @@ The repository includes offline documentation in `/external-docs`:
 - Django REST Framework API reference
 - MCP protocol specification
 
-Full source code of select important dependencies is available in `/source-code-of-dependencies` for deep integration reference. You should never write any code in these files, since this code is not actually running. It's there for you to read and understand.
+Full source code of select important dependencies is available in `/source-code-of-dependencies` for deep integration reference. You should never write any code in these files, since this code is not actually running. It's there for you to read and understand:
 
 - `encode:django-rest-framework`: Complete Django REST Framework source code for understanding ViewSet patterns, serializer implementations, request/response handling, etc.
 
-The `/src` directory contains the actual `django-rest-framework-mcp` library code.
+The `/djangorestframework_mcp` directory contains the code for `django-rest-framework-mcp` (the library we're building!).
 
-The `/demo` directory contains a basic Django DRF app that can be run with `python manage.py runserver` and serves as the location for end-to-end tests.
+The `/tests` directory contains all tests (unit and integration). Tests use pytest with Django configuration in conftest.py.
+
+The `/demo` directory is a standalone Django app that can be used to manually test the MCP Server locally.
 
 Refer to @PRD.md for high level project goals and product strategy.
 Refer to @README.md for user-facing guide to library. Be sure to pay close attention to the "Contributing" section which contains commands for running tests and a new feature checklist of things you must always do when developing new functionality. You are a contributor after all!

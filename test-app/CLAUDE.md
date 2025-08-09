@@ -1,1 +1,0 @@
-- In this directory we'll build a Django DRF app that can be run with `python manage.py runserver` to test our library. It's also where our end to end tests live (the tests that actually run in a real Django DRF app).
