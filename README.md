@@ -203,8 +203,9 @@ class CustomerMCPTests(MCPTestCase):
 - ✅ Auto-generated tool input/output schemas from DRF serializers and action method signatures
   - ✅ Required/optional inferred automatically
   - ✅ Constraints (min/max length, min/max value) inferred automatically
-  - ✅ help_text/label passed back to MCP Client as parameter descriptions
+  - ✅ help_text/label passed back to MCP Client as parameter title and description
   - ✅ Primitive type support (string/int/float/bool/datetime/date/time/UUID).
+  - ✅ Formatting inferred and passed back to MCP Client in description. (Example: Date format specified in `format` or `api_settings`)
   - _[Coming later: advanced types]_
 - ✅ Test utilities for MCP tools
 

@@ -4,34 +4,116 @@ from typing import Dict, Any, Type
 from rest_framework import serializers
 from rest_framework.fields import Field
 from rest_framework.viewsets import ViewSetMixin
+from rest_framework.settings import api_settings
 
 
-# Field type registry - maps DRF field classes to their base JSON schema definitions
-FIELD_TYPE_REGISTRY: Dict[Type[Field], Dict[str, Any]] = {
-    serializers.BooleanField: {'type': 'boolean'},
-    serializers.IntegerField: {'type': 'integer'},
-    serializers.FloatField: {'type': 'number'},
-    serializers.DecimalField: {'type': 'string', 'format': 'decimal'},
-    serializers.CharField: {'type': 'string'},
-    serializers.EmailField: {'type': 'string', 'format': 'email'},
-    serializers.URLField: {'type': 'string', 'format': 'uri'},
-    serializers.UUIDField: {'type': 'string', 'format': 'uuid'},
-    serializers.DateTimeField: {'type': 'string', 'format': 'date-time'},
-    serializers.DateField: {'type': 'string', 'format': 'date'},
-    serializers.TimeField: {'type': 'string', 'format': 'time'},
+# Schema generator functions - each field type handles all its own logic
+def get_boolean_schema(field: serializers.BooleanField) -> Dict[str, Any]:
+    return {'type': 'boolean'}
+
+
+def get_integer_schema(field: serializers.IntegerField) -> Dict[str, Any]:
+    return {'type': 'integer'}
+
+
+def get_float_schema(field: serializers.FloatField) -> Dict[str, Any]:
+    return {'type': 'number'}
+
+
+def get_char_schema(field: serializers.CharField) -> Dict[str, Any]:
+    return {'type': 'string'}
+
+
+def get_email_schema(field: serializers.EmailField) -> Dict[str, Any]:
+    return {
+        'type': 'string', 
+        'format': 'email',
+        'description': 'Valid email address (e.g., "user@example.com")'
+    }
+
+
+def get_url_schema(field: serializers.URLField) -> Dict[str, Any]:
+    return {
+        'type': 'string', 
+        'format': 'uri',
+        'description': 'Valid URL (e.g., "https://example.com")'
+    }
+
+
+def get_uuid_schema(field: serializers.UUIDField) -> Dict[str, Any]:
+    return {
+        'type': 'string',
+        'description': 'UUID format (e.g., "123e4567-e89b-12d3-a456-426614174000")'
+    }
+
+
+def get_decimal_schema(field: serializers.DecimalField) -> Dict[str, Any]:
+    schema = {'type': 'string'}
+    
+    # Add decimal precision info
+    decimal_places = getattr(field, 'decimal_places', None)
+    max_digits = getattr(field, 'max_digits', None)
+    if decimal_places is not None or max_digits is not None:
+        parts = []
+        if max_digits is not None:
+            parts.append(f"max {max_digits} digits")
+        if decimal_places is not None:
+            parts.append(f"{decimal_places} decimal places")
+        schema['description'] = f"Decimal in format: ({', '.join(parts)})"
+    
+    return schema
+
+
+def get_datetime_schema(field: serializers.DateTimeField) -> Dict[str, Any]:
+    schema = {'type': 'string'}
+    field_format = getattr(field, 'format', api_settings.DATETIME_FORMAT)
+    schema['format'] = 'date-time'
+    schema['description'] = f'DateTime in format: {field_format}'
+    return schema
+
+
+def get_date_schema(field: serializers.DateField) -> Dict[str, Any]:
+    schema = {'type': 'string'}    
+    field_format = getattr(field, 'format', api_settings.DATE_FORMAT)
+    schema['format'] = 'date'
+    schema['description'] = f'Date in format: {field_format}'
+    return schema
+
+
+def get_time_schema(field: serializers.TimeField) -> Dict[str, Any]:
+    schema = {'type': 'string'}
+    field_format = getattr(field, 'format', api_settings.TIME_FORMAT)
+    schema['description'] = f'Time in format: {field_format}'
+    return schema
+
+
+# Field type registry - maps DRF field classes to their schema generator functions
+FIELD_TYPE_REGISTRY = {
+    serializers.BooleanField: get_boolean_schema,
+    serializers.IntegerField: get_integer_schema,
+    serializers.FloatField: get_float_schema,
+    serializers.DecimalField: get_decimal_schema,
+    serializers.CharField: get_char_schema,
+    serializers.EmailField: get_email_schema,
+    serializers.URLField: get_url_schema,
+    serializers.UUIDField: get_uuid_schema,
+    serializers.DateTimeField: get_datetime_schema,
+    serializers.DateField: get_date_schema,
+    serializers.TimeField: get_time_schema,
 }
 
 def get_base_schema_for_field(field: Field) -> Dict[str, Any]:
     """
-    Get the base JSON schema for a DRF field using the registry.
+    Get the complete JSON schema for a DRF field using the registry.
     
-    Walks up the MRO to find the most specific registered type.
+    Walks up the MRO to find the most specific registered type and calls
+    its schema generator function.
     """
     # Walk up the MRO to find the most specific registered type
     for field_class in type(field).__mro__:
         if field_class in FIELD_TYPE_REGISTRY:
-            # Return a copy to avoid modifying the registry
-            return FIELD_TYPE_REGISTRY[field_class].copy()
+            schema_generator = FIELD_TYPE_REGISTRY[field_class]
+            return schema_generator(field)
     
     # Default fallback for unknown types
     # TODO: Should we actually "skip" unknown types and not return them to the MCP Client at all?
@@ -41,25 +123,50 @@ def get_base_schema_for_field(field: Field) -> Dict[str, Any]:
 def field_to_json_schema(field: Field) -> Dict[str, Any]:
     """
     Convert a DRF field to a JSON schema property definition.
+    
+    Maps DRF field properties to JSON Schema properties as defined in the MCP protocol:
+    - type: The JSON type (string, integer, number, boolean, etc.)
+    - format: Additional format hints (email, uri, date-time, etc.)
+    - minimum/maximum: Value constraints for numbers
+    - minLength/maxLength: Length constraints for strings
+    - default: Default value if provided
+    - title: Human-readable title from label
+    - description: Description from help_text plus field-specific format info
     """
-    # Get base schema from registry
+    # Get complete schema from registry (includes all field-specific logic)
     schema = get_base_schema_for_field(field)
     
-    # Apply constraints
+    # Apply numeric constraints (minimum/maximum)
     if hasattr(field, 'max_value') and field.max_value is not None:
         schema['maximum'] = field.max_value
     if hasattr(field, 'min_value') and field.min_value is not None:
         schema['minimum'] = field.min_value
+    
+    # Apply string constraints (minLength/maxLength)
     if hasattr(field, 'max_length') and field.max_length:
         schema['maxLength'] = field.max_length
     if hasattr(field, 'min_length') and field.min_length:
         schema['minLength'] = field.min_length
     
-    # Apply description from help_text or label.
+    # Apply default value if present
+    if hasattr(field, 'default') and field.default is not serializers.empty:
+        # Convert callable defaults to their values
+        default = field.default() if callable(field.default) else field.default
+        # Only include JSON-serializable defaults
+        if default is not None:
+            schema['default'] = default
+    
+    # Apply title from label (for UI display)
+    if hasattr(field, 'label') and field.label:
+        schema['title'] = field.label
+    
+    # Add help_text to description (may already have format info from schema generators)
     if hasattr(field, 'help_text') and field.help_text:
-        schema['description'] = field.help_text
-    elif hasattr(field, 'label') and field.label:
-        schema['description'] = field.label
+        if 'description' in schema:
+            # Combine existing description (like "UUID format") with help_text
+            schema['description'] = f"{field.help_text}. {schema['description']}"
+        else:
+            schema['description'] = field.help_text
     
     return schema
 
