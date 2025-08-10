@@ -1,65 +1,61 @@
 """Schema generation from DRF serializers to MCP tool schemas."""
 
-from typing import Dict, Any, Type, Optional, List
+from typing import Dict, Any, Type
 from rest_framework import serializers
 from rest_framework.fields import Field
 from rest_framework.viewsets import ViewSetMixin
-import datetime
-import uuid
+
+
+# Field type registry - maps DRF field classes to their base JSON schema definitions
+FIELD_TYPE_REGISTRY: Dict[Type[Field], Dict[str, Any]] = {
+    serializers.BooleanField: {'type': 'boolean'},
+    serializers.IntegerField: {'type': 'integer'},
+    serializers.FloatField: {'type': 'number'},
+    serializers.DecimalField: {'type': 'string', 'format': 'decimal'},
+    serializers.CharField: {'type': 'string'},
+    serializers.EmailField: {'type': 'string', 'format': 'email'},
+    serializers.URLField: {'type': 'string', 'format': 'uri'},
+    serializers.UUIDField: {'type': 'string', 'format': 'uuid'},
+    serializers.DateTimeField: {'type': 'string', 'format': 'date-time'},
+    serializers.DateField: {'type': 'string', 'format': 'date'},
+    serializers.TimeField: {'type': 'string', 'format': 'time'},
+}
+
+def get_base_schema_for_field(field: Field) -> Dict[str, Any]:
+    """
+    Get the base JSON schema for a DRF field using the registry.
+    
+    Walks up the MRO to find the most specific registered type.
+    """
+    # Walk up the MRO to find the most specific registered type
+    for field_class in type(field).__mro__:
+        if field_class in FIELD_TYPE_REGISTRY:
+            # Return a copy to avoid modifying the registry
+            return FIELD_TYPE_REGISTRY[field_class].copy()
+    
+    # Default fallback for unknown types
+    # TODO: Should we actually "skip" unknown types and not return them to the MCP Client at all?
+    return {'type': 'string'}
 
 
 def field_to_json_schema(field: Field) -> Dict[str, Any]:
-    """Convert a DRF field to a JSON schema property definition."""
-    schema: Dict[str, Any] = {}
+    """
+    Convert a DRF field to a JSON schema property definition.
+    """
+    # Get base schema from registry
+    schema = get_base_schema_for_field(field)
     
-    # Map DRF field types to JSON schema types
-    # Check specific field types before their parent types
-    if isinstance(field, serializers.EmailField):
-        schema['type'] = 'string'
-        schema['format'] = 'email'
-    elif isinstance(field, serializers.URLField):
-        schema['type'] = 'string'
-        schema['format'] = 'uri'
-    elif isinstance(field, serializers.CharField):
-        schema['type'] = 'string'
-        if hasattr(field, 'max_length') and field.max_length:
-            schema['maxLength'] = field.max_length
-        if hasattr(field, 'min_length') and field.min_length:
-            schema['minLength'] = field.min_length
-    elif isinstance(field, serializers.IntegerField):
-        schema['type'] = 'integer'
-        if hasattr(field, 'max_value') and field.max_value is not None:
-            schema['maximum'] = field.max_value
-        if hasattr(field, 'min_value') and field.min_value is not None:
-            schema['minimum'] = field.min_value
-    elif isinstance(field, serializers.FloatField):
-        schema['type'] = 'number'
-        if hasattr(field, 'max_value') and field.max_value is not None:
-            schema['maximum'] = field.max_value
-        if hasattr(field, 'min_value') and field.min_value is not None:
-            schema['minimum'] = field.min_value
-    elif isinstance(field, serializers.BooleanField):
-        schema['type'] = 'boolean'
-    elif isinstance(field, serializers.DateTimeField):
-        schema['type'] = 'string'
-        schema['format'] = 'date-time'
-    elif isinstance(field, serializers.DateField):
-        schema['type'] = 'string'
-        schema['format'] = 'date'
-    elif isinstance(field, serializers.TimeField):
-        schema['type'] = 'string'
-        schema['format'] = 'time'
-    elif isinstance(field, serializers.UUIDField):
-        schema['type'] = 'string'
-        schema['format'] = 'uuid'
-    elif isinstance(field, serializers.DecimalField):
-        schema['type'] = 'string'
-        schema['format'] = 'decimal'
-    else:
-        # Default to string for unknown field types
-        schema['type'] = 'string'
+    # Apply constraints
+    if hasattr(field, 'max_value') and field.max_value is not None:
+        schema['maximum'] = field.max_value
+    if hasattr(field, 'min_value') and field.min_value is not None:
+        schema['minimum'] = field.min_value
+    if hasattr(field, 'max_length') and field.max_length:
+        schema['maxLength'] = field.max_length
+    if hasattr(field, 'min_length') and field.min_length:
+        schema['minLength'] = field.min_length
     
-    # Add description from help_text or label
+    # Apply description from help_text or label.
     if hasattr(field, 'help_text') and field.help_text:
         schema['description'] = field.help_text
     elif hasattr(field, 'label') and field.label:

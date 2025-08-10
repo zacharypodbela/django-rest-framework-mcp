@@ -193,22 +193,28 @@ class CustomerMCPTests(MCPTestCase):
 
 **MVP Features (Available Now)**
 
-- ✅ Automatic tool generation for any ViewSet of CRUD actions (list/retrieve/create/update/partial_update/destroy) and custom actions (created with @action decorator)
+- ✅ Automatically generates tools for all actions on any ViewSet
+  - ✅ CRUD actions (list/retrieve/create/update/partial_update/destroy)
+  - ✅ Custom actions (created with @action decorator)
+- ✅ Implements [MCP protocol](https://modelcontextprotocol.io/) for Initialization and Tools (discovery and invocation)
+  - _[Coming later: support for resources, prompts, notifications coming later]_
 - ✅ HTTP transport via `/mcp` endpoint
-- ✅ MCP protocol support for Initialization and Tools (discovery and invocation) as laid out in the [MCP Protocol](https://modelcontextprotocol.io/)
+  - _[Coming later: sse & stdio coming later]_
 - ✅ Auto-generated tool input/output schemas from DRF serializers and action method signatures
-- ✅ Primitive type support (string/int/float/bool/datetime/date/time/UUID)
+  - ✅ Required/optional inferred automatically
+  - ✅ Constraints (min/max length, min/max value) inferred automatically
+  - ✅ help_text/label passed back to MCP Client as parameter descriptions
+  - ✅ Primitive type support (string/int/float/bool/datetime/date/time/UUID).
+  - _[Coming later: advanced types]_
 - ✅ Test utilities for MCP tools
 
 ### Future Roadmap
 
 - Resource and prompt discovery and invocation as laid out in [MCP Protocol](https://modelcontextprotocol.io/)
 
+- Notifications as laid out in [MCP Protocol](https://modelcontextprotocol.io/)
+
 - Browsable UI of MCP tool, resource, and prompts discovery and invocation
-
-- Required/optional inferred automatically
-
-- Constraints (min/max length, min/max value) inferred automatically
 
 - Decorate custom validators with instructions (which will be shared with the MCP Client)
 
@@ -219,8 +225,6 @@ class CustomerMCPTests(MCPTestCase):
 - Arrays/objects/JSONB fields
 
 - Enum fields
-
-- help_text/label passed back to MCP Client as parameter descriptions
 
 - Permission requirements advertised in tool schema
 
