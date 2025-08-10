@@ -1,6 +1,6 @@
 """Schema generation from DRF serializers to MCP tool schemas."""
 
-from typing import Dict, Any, Type
+from typing import Dict, Any
 from rest_framework import serializers
 from rest_framework.fields import Field
 from rest_framework.viewsets import ViewSetMixin
@@ -88,6 +88,39 @@ def get_time_schema(field: serializers.TimeField) -> Dict[str, Any]:
     return schema
 
 
+def get_serializer_schema(serializer: serializers.BaseSerializer) -> Dict[str, Any]:
+    properties = {}
+    required = []
+    
+    for field_name, field in serializer.fields.items():
+        # Skip read-only fields for input schemas
+        if field.read_only:
+            continue
+        
+        properties[field_name] = field_to_json_schema(field)
+        
+        # Mark required fields
+        if field.required and not field.read_only:
+            required.append(field_name)
+    
+    schema = {
+        'type': 'object',
+        'properties': properties
+    }
+    
+    if required:
+        schema['required'] = required
+    
+    return schema
+
+
+def get_list_serializer_schema(serializer: serializers.ListSerializer) -> Dict[str, Any]:
+    child_schema = field_to_json_schema(serializer.child)
+    return {
+        'type': 'array',
+        'items': child_schema
+    }
+
 # Field type registry - maps DRF field classes to their schema generator functions
 FIELD_TYPE_REGISTRY = {
     serializers.BooleanField: get_boolean_schema,
@@ -101,6 +134,8 @@ FIELD_TYPE_REGISTRY = {
     serializers.DateTimeField: get_datetime_schema,
     serializers.DateField: get_date_schema,
     serializers.TimeField: get_time_schema,
+    serializers.ListSerializer: get_list_serializer_schema,
+    serializers.BaseSerializer: get_serializer_schema,
 }
 
 def get_base_schema_for_field(field: Field) -> Dict[str, Any]:
@@ -172,49 +207,6 @@ def field_to_json_schema(field: Field) -> Dict[str, Any]:
     return schema
 
 
-def serializer_to_json_schema(serializer_class: Type[serializers.Serializer], 
-                             for_input: bool = True) -> Dict[str, Any]:
-    """
-    Convert a DRF serializer to a JSON schema.
-    
-    Args:
-        serializer_class: The serializer class to convert.
-        for_input: If True, generate schema for input (write operations).
-                  If False, generate schema for output (read operations).
-    
-    Returns:
-        A JSON schema dict.
-    """
-    serializer = serializer_class()
-    properties = {}
-    required = []
-    
-    for field_name, field in serializer.fields.items():
-        # Skip read-only fields for input schemas
-        if for_input and field.read_only:
-            continue
-        
-        # Skip write-only fields for output schemas
-        if not for_input and field.write_only:
-            continue
-        
-        properties[field_name] = field_to_json_schema(field)
-        
-        # Mark required fields
-        if for_input and field.required and not field.read_only:
-            required.append(field_name)
-    
-    schema = {
-        'type': 'object',
-        'properties': properties
-    }
-    
-    if required:
-        schema['required'] = required
-    
-    return schema
-
-
 def generate_body_schema(tool: MCPTool) -> Dict[str, Any]:
     """
     Generate the body schema for a ViewSet action.
@@ -225,6 +217,7 @@ def generate_body_schema(tool: MCPTool) -> Dict[str, Any]:
     Returns:
         Dict containing body schema and whether body is required.
     """
+    # Determine the serializer class to use
     serializer_class = None
     # If input serializer was explicitly provided, use it
     if hasattr(tool, 'input_serializer'):
@@ -244,11 +237,11 @@ def generate_body_schema(tool: MCPTool) -> Dict[str, Any]:
         instance.action = tool.action
         serializer_class = instance.get_serializer_class()
     
-    body_schema = serializer_to_json_schema(serializer_class, for_input=True)
-        
+    body_schema = field_to_json_schema(serializer_class())
+    
     return {
         'schema': body_schema,
-        'is_required': body_schema.get('required')
+        'is_required': bool(body_schema.get('required'))
     }
 
 

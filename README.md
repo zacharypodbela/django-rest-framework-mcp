@@ -117,7 +117,7 @@ For custom actions that don't require input, set `input_serializer=None`:
 @action(detail=False, methods=['get'])
 def recent_posts(self, request):
     recent_posts = Post.objects.filter(created_at__gte=timezone.now() - timedelta(days=7))
-    serializer = PostListSerializer(recent_posts, many=True)
+    serializer = PostSerializer(recent_posts, many=True)
     return Response(serializer.data)
 ```
 
@@ -235,6 +235,25 @@ class CustomerMCPTests(MCPTestCase):
         self.assertEqual(len(result['data']), 2)
 ```
 
+### Array Inputs
+
+For endpoints that accept arrays of data (like bulk operations), create a `ListSerializer` subclass and use it as your `input_serializer`:
+
+```python
+class CustomerListSerializer(serializers.ListSerializer):
+    child = CustomerSerializer()
+
+@mcp_viewset()
+class CustomerViewSet(viewsets.ModelViewSet):
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer
+
+    @mcp_tool(input_serializer=CustomerListSerializer)
+    @action(detail=False, methods=['post'])
+    def bulk_create(self, request):
+      # ... request.data will be an array of Posts
+```
+
 ## Roadmap
 
 ### Currently Supported DRF Features
@@ -252,7 +271,9 @@ class CustomerMCPTests(MCPTestCase):
   - ✅ Required/optional inferred automatically
   - ✅ Constraints (min/max length, min/max value) inferred automatically
   - ✅ help_text/label passed back to MCP Client as parameter title and description
-  - ✅ Primitive type support (string/int/float/bool/datetime/date/time/UUID).
+  - ✅ Primitive types (string/int/float/bool/datetime/date/time/UUID)
+  - ✅ Nested Serializers
+  - ✅ ListSerializers
   - ✅ Formatting inferred and passed back to MCP Client in description. (Example: Date format specified in `format` or `api_settings`)
   - _[Coming later: advanced types]_
 - ✅ Test utilities for MCP tools
@@ -268,8 +289,6 @@ class CustomerMCPTests(MCPTestCase):
 - Decorate custom validators with instructions (which will be shared with the MCP Client)
 
 - Relationship fields (PK/Slug/StringRelated)
-
-- Support for Nested serializers
 
 - Arrays/objects/JSONB fields
 

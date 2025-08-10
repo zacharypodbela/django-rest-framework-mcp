@@ -89,6 +89,14 @@ def mcp_tool(name: Optional[str] = None, title: Optional[str] = None,
         
         # Only store serializer attributes if they were explicitly provided
         if input_serializer is not ...:
+            # Validate that input_serializer is a class, not an instance
+            if input_serializer is not None:
+                from rest_framework import serializers
+                if isinstance(input_serializer, serializers.BaseSerializer):
+                    raise ValueError(
+                        f"input_serializer for {func.__name__} must be a serializer class, not an instance."
+                    )
+            
             wrapper._mcp_input_serializer = input_serializer
         
         return wrapper

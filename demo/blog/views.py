@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from djangorestframework_mcp.decorators import mcp_tool, mcp_viewset
 
 from blog.models import Post
-from blog.serializers import CreatePostSerializer, PostSerializer
+from blog.serializers import BulkPostSerializer, CreatePostSerializer, PostSerializer
 
 # DEMO: Tools are created for all CRUD actions on ModelViewSet
 @mcp_viewset()
@@ -15,6 +15,7 @@ class PostViewSet(viewsets.ModelViewSet):
     serializer_class = PostSerializer
 
     # DEMO: For overridden CRUD actions, use input_serializer if the input is different from the serializer_class
+    # DEMO: Custom logic using is_mcp_request works
     @mcp_tool(
         name='create_posts_via_mcp', 
         title='Create Posts via MCP', 
@@ -22,12 +23,11 @@ class PostViewSet(viewsets.ModelViewSet):
         input_serializer=CreatePostSerializer,
     )
     def create(self, request, *args, **kwargs):
-        # DEMO: Custom logic using is_mcp_request works
         if request.is_mcp_request and request.data.get('content'):
             # Append text to the end of the content noting it was created via MCP
             request.data['content'] += "\n\n*Created via MCP*"
 
-        if request.data.get('add_created_on_footer'):
+        if request.data.pop('add_created_on_footer'):
             request.data['content'] += f"\n\n*Created on {timezone.now().date()}*"
 
         return super().create(request, *args, **kwargs)
@@ -47,17 +47,23 @@ class PostViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     # DEMO: Register custom actions with custom input
+    # DEMO: Support for ListSerializers (array of objects) as input
     @mcp_tool(
-        name='merge_posts',
-        title='Merge Posts',
-        description='Merges the content of a new post with a user-provided prompt',
-        input_serializer=PostSerializer(many=True)
+        name='bulk_create_posts',
+        title='Bulk Create Posts',
+        description='Creates multiple blog posts in a single request',
+        input_serializer=BulkPostSerializer
     )
     @action(detail=False, methods=['post'])
-    def merge(self, request):
-        # Takes in an array of post objects and combines their content and titles into a new post.
-        posts = request.data['posts']
-        combined_content = "\n\n".join([post['content'] for post in posts])
-        combined_titles = "\n\n".join([post['title'] for post in posts])
-        post = Post.objects.create(content=combined_content, title=combined_titles)
-        return Response(PostSerializer(post).data)
+    def bulk_create(self, request):
+        posts = request.data
+        created_posts = []
+        for post_data in posts:
+            serializer = PostSerializer(data=post_data)
+            if serializer.is_valid():
+                post = serializer.save()
+                created_posts.append(post)
+            else:
+                return Response(serializer.errors, status=400)
+
+        return Response(PostSerializer(created_posts, many=True).data, status=201)

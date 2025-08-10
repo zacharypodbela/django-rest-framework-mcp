@@ -14,5 +14,8 @@ class CreatePostSerializer(PostSerializer):
         required=False, 
         default=False,
         label='Add "Created on" Footer',
-        help_text='If true, appends the creation date to the end of the content'
+        help_text='If true, appends the creation date to the end of the content',
     )
+
+class BulkPostSerializer(serializers.ListSerializer):
+    child = PostSerializer()
