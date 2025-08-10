@@ -18,6 +18,7 @@ class MCPViewSetDecorator:
             name: Custom base name for the tool set. Defaults to ViewSet's model name.
             actions: List of specific actions to expose. If None, all actions are exposed.
         """
+        # TODO: Rename to basename to mirror the similar param that exists when defining routes in DRF
         self.name = name
         self.actions = actions
     
@@ -46,17 +47,18 @@ mcp_viewset = MCPViewSetDecorator
 def mcp_tool(name: Optional[str] = None, title: Optional[str] = None, 
              description: Optional[str] = None):
     """
-    Decorator for individual ViewSet actions to expose them as MCP tools.
+    Decorator for individual ViewSet actions to customize their MCP tool metadata.
     
-    This decorator allows registering individual ViewSet methods as MCP tools
-    without decorating the entire ViewSet.
+    This decorator allows customizing individual ViewSet methods when used with @mcp_viewset.
+    The ViewSet class must also be decorated with @mcp_viewset for this to have any effect.
     
     Args:
-        name: Custom tool name. If not provided, will be generated from ViewSet and action.
+        name: custom_tool_name. If not provided, will be generated from ViewSet and action.
         title: Human-readable title for the tool.
         description: Custom description for the tool.
     
     Example:
+        @mcp_viewset()
         class CustomerViewSet(ModelViewSet):
             @mcp_tool(name='list_all_customers', 
                      title='List All Customers',
@@ -65,14 +67,15 @@ def mcp_tool(name: Optional[str] = None, title: Optional[str] = None,
                 return super().list(request)
     """
     # TODO: Check to make sure this is only being decorated on something that was decorated with @action
-    
+    # TODO: Is there a way to make sure this is only being decorated on views that have @mcp_viewset? Or no b/c that runs after?
+
     def decorator(func):
         @wraps(func)
         def wrapper(self, *args, **kwargs):
             return func(self, *args, **kwargs)
         
         # Store MCP metadata on the function
-        wrapper._mcp_custom_name = name
+        wrapper._mcp_tool_name = name
         wrapper._mcp_title = title
         wrapper._mcp_description = description
         wrapper._mcp_needs_registration = True

@@ -88,26 +88,12 @@ Follow these instructions to use `mcp-remote` to connect to Claude Desktop:
 
 ## Advanced Configuration
 
-### Registering Individual Actions
+### Selective Action Registration
 
-If you don't want to create a tool from every action of a ViewSet, you have two options:
-
-#### Option 1: Individually Register Actions with @mcp_tool
+If you don't want to create a tool from every action of a ViewSet, you can whitelist which actions to expose by passing an `actions` array to `@mcp_viewset`:
 
 ```python
-class CustomerViewSet(viewsets.ModelViewSet):
-    queryset = Customer.objects.all()
-    serializer_class = CustomerSerializer
-
-    @mcp_tool()
-    def banish(self, request, pk=None):
-        # ... Business Logic
-```
-
-#### Option 2: Pass an actions array to the @mcp_viewset
-
-```python
-@mcp_tool(actions=['banish'])
+@mcp_viewset(actions=['banish', 'list'])
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
@@ -118,10 +104,10 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
 ### Custom Tool Names and Descriptions
 
-You can add additional context about your MCP tools to help LLMs understand your tools better using the `@mcp_tool` decorator:
+You can customize the names, titles, and descriptions of individual actions using the `@mcp_tool` decorator. (NOTE: The `@mcp_tool` decorator only works when the ViewSet class is also decorated with `@mcp_viewset`. Using `@mcp_tool` alone will not register any MCP tools.)
 
 ```python
-@mcp_viewset(name="customer_management")
+@mcp_viewset()
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer

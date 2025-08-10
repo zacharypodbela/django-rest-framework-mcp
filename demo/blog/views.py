@@ -1,7 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from djangorestframework_mcp.decorators import mcp_viewset
+from djangorestframework_mcp.decorators import mcp_tool, mcp_viewset
 
 from blog.models import Post
 from blog.serializers import PostSerializer
@@ -29,3 +29,17 @@ class PostViewSet(viewsets.ModelViewSet):
         recent_posts = self.get_queryset().order_by('-created_at')[:5]
         serializer = self.get_serializer(recent_posts, many=True)
         return Response(serializer.data)
+
+@mcp_viewset()
+class DashboardViewSet(viewsets.ViewSet):
+
+    # This tests:
+    # - Customizing tool metadata for better LLM performance
+    @mcp_tool(name='blog_stats', title='Blog Statistics', description='Get blog statistics')
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        # Example action to return some dashboard statistics
+        data = {
+            'total_posts': Post.objects.count(),
+        }
+        return Response(data)

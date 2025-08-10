@@ -14,6 +14,7 @@ class MCPRegistry:
         """Register all actions from a ViewSet as MCP tools."""
         if base_name is None:
             # Generate base name from queryset model (if one exists) or viewset class
+            # TODO: Default should be reversed to be action_base_name
             base_name = viewset_class.__name__.replace('ViewSet', '').lower()
             if hasattr(viewset_class, 'queryset') and viewset_class.queryset is not None:
                 model = viewset_class.queryset.model
@@ -24,13 +25,24 @@ class MCPRegistry:
         for action_name in all_actions:
             if actions and action_name not in actions:
                 continue
-            tool_name = f"{base_name}_{action_name}"
+            
+            # Check if the method has @mcp_tool metadata
+            method = getattr(viewset_class, action_name, None)
+            custom_name = getattr(method, '_mcp_tool_name', None) if method else None
+            custom_title = getattr(method, '_mcp_title', None) if method else None
+            custom_description = getattr(method, '_mcp_description', None) if method else None
+            
+            # Use custom values if provided, otherwise generate defaults
+            tool_name = custom_name if custom_name else f"{base_name}_{action_name}"
+            title = custom_title if custom_title else self._generate_tool_title(action_name, base_name)
+            description = custom_description if custom_description else f"{action_name.capitalize()} {base_name}"
+            
             self.register_tool(
                 tool_name=tool_name,
                 viewset_class=viewset_class,
                 action=action_name,
-                title=self._generate_tool_title(action_name, base_name),
-                description=f"{action_name.capitalize()} {base_name}"
+                title=title,
+                description=description
             )
         
         return viewset_class
@@ -43,9 +55,6 @@ class MCPRegistry:
             'viewset_class': viewset_class,
             'action': action,
         }
-
-        # TODO: LLM performance will be bad if there is no descriptions (or at least titles). We should 
-        # rethink if there should be a warning here or if one of these values should be required.
 
         if title:
             tool['title'] = title
@@ -86,20 +95,6 @@ class MCPRegistry:
     def get_tool_by_name(self, tool_name: str) -> Optional[Dict[str, Any]]:
         """Get a specific tool by name."""
         return self._tools.get(tool_name)
-    
-    def update_tool(self, tool_name: str, title: Optional[str] = None,
-                    description: Optional[str] = None, custom_name: Optional[str] = None):
-        """Update an existing tool's configuration."""
-        if tool_name in self._tools:
-            if title is not None:
-                self._tools[tool_name]['title'] = title
-            if description is not None:
-                self._tools[tool_name]['description'] = description
-            if custom_name is not None:
-                # Update the tool with new name
-                tool_info = self._tools.pop(tool_name)
-                tool_info['name'] = custom_name
-                self._tools[custom_name] = tool_info
     
     def _generate_tool_title(self, action: str, base_name: str) -> str:
         """Generate a human-readable title for a tool."""
