@@ -2,7 +2,7 @@
 
 import json
 from typing import Dict, Any, Optional
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
@@ -31,8 +31,9 @@ class MCPView(View):
             if method == 'initialize':
                 result = self.handle_initialize(params)
             elif method == 'notifications/initialized':
-                # Notifications don't expect a response
-                return JsonResponse({'status': 'ok'})
+                # Sent by the client to acknowledge the receipt of our response to its initialize handshake
+                # No response is expected
+                return HttpResponse(status=204)  # No Content
             elif method == 'tools/list':
                 result = self.handle_tools_list(params)
             elif method == 'tools/call':
@@ -63,6 +64,7 @@ class MCPView(View):
     
     def handle_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle initialize request."""
+        # The only capabilities we currently support are tool calling (without listChanged notifications)
         return {
             'protocolVersion': '2025-06-18',
             'capabilities': {
@@ -106,9 +108,10 @@ class MCPView(View):
             
             # Execute the tool
             result = self.execute_tool(request, tool_info, tool_params)
-            
-            # Format the response
-            return {
+
+            # Per latest MCP specification (2025-06-18), JSON should be returned in both
+            # structured content and as stringified text content (the latter for backwards compatibility)
+            response = {
                 'content': [
                     {
                         'type': 'text', 
@@ -116,6 +119,17 @@ class MCPView(View):
                     }
                 ]
             }
+            # Add structured content if result is JSON-serializable
+            try:
+                # Test if result can be JSON serialized (for structuredContent validation)
+                json.dumps(result)
+                response['structuredContent'] = result
+            except (TypeError, ValueError):
+                # If result contains non-JSON-serializable data, skip structuredContent
+                # The text content will still contain the string representation
+                pass
+                
+            return response
             
         except Exception as e:
             return {
@@ -193,8 +207,6 @@ class MCPView(View):
                 return response.data
             else:
                 # For responses like 204 No Content (destroy), return a success message
-                if response.status_code == 204:
-                    return {"message": "Operation completed successfully"}
-                return {"message": "Success"}
+                return {"message": "Operation completed successfully"}
         
         return response
