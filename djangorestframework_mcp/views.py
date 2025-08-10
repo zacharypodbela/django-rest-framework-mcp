@@ -168,7 +168,6 @@ class MCPView(View):
         viewset.action = action
         viewset.format_kwarg = None
         viewset.args = []
-        viewset.kwargs = {}
         
         # Mark request as coming from MCP
         request.is_mcp_request = True
@@ -178,17 +177,11 @@ class MCPView(View):
         body_data = params.get('body', {})
         
         # Set up ViewSet kwargs from method_kwargs
-        if method_kwargs:
-            viewset.kwargs = method_kwargs.copy()
+        viewset.kwargs = method_kwargs.copy()
         
         # Set up request data from body
-        # Django requests don't have 'data' attribute by default, so we need to add it
-        if body_data:
-            request.data = body_data
-        else:
-            # Ensure request.data exists even if empty
-            request.data = {}
-        
+        request.data = body_data
+
         # Get the method dynamically and call it
         if not hasattr(viewset, action):
             raise ValueError(f"ViewSet does not support action: {action}")
