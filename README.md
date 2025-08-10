@@ -39,15 +39,16 @@ class CustomerViewSet(ModelViewSet):
     serializer_class = CustomerSerializer
 ```
 
-With that one line of code all actions of your ViewSet are exposed as MCP tools. On a standard `ModelViewSet` the following tools would be created:
+When `@mcp_viewset` is applied to a `ViewSet`, any of the following methods that are defined will be will automatically be exposed as MCP tools:
 
-- List customers with `customers_list`
-- Retrieve a customer with `customers_retrieve`
-- Create new customers with `customers_create`
-- Update customers with `customers_update`
-- Delete customers with `customers_destroy`
+- `list` -> List customers with `customers_list` tool.
+- `retrieve` -> Retrieve a customer with `customers_retrieve` tool.
+- `create` -> Create new customers with `customers_create` tool.
+- `update` -> Update customers with `customers_update` tool. (All fields must be passed in)
+- `partial_update` -> Update customers with `customers_partial_update` tool. (A subset of fields can be passed in)
+- `destroy` -> Delete customers with `customers_destroy` tool.
 
-If you've added additional endpoints using the @action decorator those will automatically be detected and added as tools as well. For every tool the library automatically:
+If you've created additional endpoints using the `@action` decorator those will automatically be detected and added as tools as well. For every tool the library automatically:
 
 - Generates tool schemas from your DRF serializers
 - Preserves your existing permissions, authentication, and filtering
@@ -206,10 +207,10 @@ class CustomerMCPTests(MCPTestCase):
 
 **MVP Features (Available Now)**
 
-- ✅ Automatic tool generation for ModelViewSet / APIViewMixins CRUD actions (list/retrieve/create/update/partial_update/destroy)
+- ✅ Automatic tool generation for any ViewSet of CRUD actions (list/retrieve/create/update/partial_update/destroy) and custom actions (created with @action decorator)
 - ✅ HTTP transport via `/mcp` endpoint
-- ✅ Full MCP protocol support (tool discovery and invocation) as laid out in [MCP Protocol](https://modelcontextprotocol.io/)
-- ✅ Auto-generated tool input/output schemas from DRF serializers
+- ✅ MCP protocol support for Initialization and Tools (discovery and invocation) as laid out in the [MCP Protocol](https://modelcontextprotocol.io/)
+- ✅ Auto-generated tool input/output schemas from DRF serializers and action method signatures
 - ✅ Primitive type support (string/int/float/bool/datetime/date/time/UUID)
 - ✅ Test utilities for MCP tools
 
@@ -218,10 +219,6 @@ class CustomerMCPTests(MCPTestCase):
 - Resource and prompt discovery and invocation as laid out in [MCP Protocol](https://modelcontextprotocol.io/)
 
 - Browsable UI of MCP tool, resource, and prompts discovery and invocation
-
-- Tool Definition Decorator for any subclass of ViewSet/GenericViewSet [Not sure if we'll support both - TBD]
-
-- Tool Definition Decorator and automatic detection for custom actions defined via @action (detail or list)
 
 - Required/optional inferred automatically
 

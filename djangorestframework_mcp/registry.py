@@ -59,33 +59,27 @@ class MCPRegistry:
         return list(self._tools.values())
     
     def _get_viewset_actions(self, viewset_class: Type[ViewSetMixin]) -> List[str]:
-        """Determine available actions for a ViewSet."""
+        """
+        Determine available actions for a ViewSet using the same approach as DRF routers.
+
+        The logic mirrors how DRF's SimpleRouter works to create a list of endpoints when a ViewSet
+        is registered without manual `.as_view` mapping. (i.e. `router.register(r'posts', PostViewSet)`)
+        """
         actions = []
-
-        # TODO: Generalize implementation to add support for custom @action decorators
-
-        # Import here to avoid circular dependencies
-        from rest_framework.mixins import (
-            CreateModelMixin, RetrieveModelMixin, UpdateModelMixin,
-            DestroyModelMixin, ListModelMixin
-        )
         
-        # Check which mixins the ViewSet has
-        mixin_actions = {
-            'list': ListModelMixin,
-            'retrieve': RetrieveModelMixin, 
-            'create': CreateModelMixin,
-            'update': UpdateModelMixin,
-            'partial_update': UpdateModelMixin,  # Both update actions come from UpdateModelMixin
-            'destroy': DestroyModelMixin
-        }
+        # Standard CRUD actions
+        standard_actions = ['list', 'create', 'retrieve', 'update', 'partial_update', 'destroy']
         
-        for action, mixin in mixin_actions.items():
-            # Check if ViewSet has this mixin and the method
-            if issubclass(viewset_class, mixin) and hasattr(viewset_class, action):
-                method = getattr(viewset_class, action)
-                if callable(method):
-                    actions.append(action)
+        # Check which standard actions the ViewSet actually implements
+        # This is equivalent to router's get_method_map() logic
+        for action in standard_actions:
+            if hasattr(viewset_class, action):
+                actions.append(action)
+        
+        # Use DRF's built-in method to get custom @action decorated methods
+        extra_actions = viewset_class.get_extra_actions()
+        for action in extra_actions:
+            actions.append(action.__name__)
         
         return actions
     

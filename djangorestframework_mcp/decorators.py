@@ -7,7 +7,9 @@ from .registry import registry
 
 class MCPViewSetDecorator:
     """Decorator class for exposing ViewSets or individual actions as MCP tools."""
-    
+    # TODO: Check to make sure this is not being decorated on something that doesn't inherit from ViewSetMixin.
+    # Tests should explicitly make sure that if its called on View or GenericAPIView it throws.
+
     def __init__(self, name: Optional[str] = None, actions: Optional[list] = None):
         """
         Initialize the MCP tool decorator.
@@ -62,6 +64,8 @@ def mcp_tool(name: Optional[str] = None, title: Optional[str] = None,
             def list(self, request):
                 return super().list(request)
     """
+    # TODO: Check to make sure this is only being decorated on something that was decorated with @action
+    
     def decorator(func):
         @wraps(func)
         def wrapper(self, *args, **kwargs):

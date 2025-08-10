@@ -1,4 +1,6 @@
 from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from djangorestframework_mcp.decorators import mcp_viewset
 
 from blog.models import Post
@@ -18,3 +20,12 @@ class PostViewSet(viewsets.ModelViewSet):
             request.data['content'] += "\n\n*Created via MCP*"
 
         return super().create(request, *args, **kwargs)
+
+    # This tests:
+    # - Automatic detection and registry of custom actions
+    @action(detail=False, methods=['get'])
+    def recent_posts(self, request):
+        # Returns the 5 most recently created posts
+        recent_posts = self.get_queryset().order_by('-created_at')[:5]
+        serializer = self.get_serializer(recent_posts, many=True)
+        return Response(serializer.data)
