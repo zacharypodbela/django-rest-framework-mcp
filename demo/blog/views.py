@@ -1,10 +1,10 @@
 from rest_framework import viewsets
-from djangorestframework_mcp.decorators import mcp_tool
+from djangorestframework_mcp.decorators import mcp_viewset
 
 from blog.models import Post
 from blog.serializers import PostSerializer
 
-@mcp_tool()
+@mcp_viewset()
 class PostViewSet(viewsets.ModelViewSet):
     queryset = Post.objects.all()
     serializer_class = PostSerializer

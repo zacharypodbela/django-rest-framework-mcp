@@ -5,8 +5,7 @@ from typing import Optional, Type
 from rest_framework.viewsets import ViewSetMixin
 from .registry import registry
 
-# TODO: Rename to be something that is more fitting for the fact that it registers all actions in ViewSet as MCP tools
-class MCPToolDecorator:
+class MCPViewSetDecorator:
     """Decorator class for exposing ViewSets or individual actions as MCP tools."""
     
     def __init__(self, name: Optional[str] = None, actions: Optional[list] = None):
@@ -38,75 +37,42 @@ class MCPToolDecorator:
         viewset_class._mcp_name = self.name
         
         return viewset_class
-    
-    def action(self, name: Optional[str] = None, title: Optional[str] = None, 
-               description: Optional[str] = None):
-        """
-        Decorator for individual ViewSet actions to customize their MCP exposure.
-        
-        Args:
-            name: Custom name for this specific action's tool.
-            title: Human-readable title for the tool.
-            description: Description for this specific action.
-        """
-        def decorator(func):
-            @wraps(func)
-            def wrapper(self, *args, **kwargs):
-                return func(self, *args, **kwargs)
-            
-            # Store MCP metadata on the function
-            wrapper._mcp_custom_name = name
-            wrapper._mcp_title = title
-            wrapper._mcp_description = description
-            
-            # After the ViewSet is registered, update the tool if it exists
-            # This will be processed when the ViewSet class is fully defined
-            wrapper._mcp_needs_update = True
-            
-            return wrapper
-        
-        return decorator
 
-# TODO: Rename to mcp_tool
-def mcp_action(viewset_class: Type[ViewSetMixin], action: str, 
-               name: Optional[str] = None, title: Optional[str] = None,
-               description: Optional[str] = None):
+# Expose under decorator naming for use
+mcp_viewset = MCPViewSetDecorator
+
+def mcp_tool(name: Optional[str] = None, title: Optional[str] = None, 
+             description: Optional[str] = None):
     """
-    Register a single ViewSet action as an MCP tool.
+    Decorator for individual ViewSet actions to expose them as MCP tools.
     
-    This function allows registering individual actions without decorating the entire ViewSet.
+    This decorator allows registering individual ViewSet methods as MCP tools
+    without decorating the entire ViewSet.
     
     Args:
-        viewset_class: The ViewSet class containing the action.
-        action: The action name to register.
-        name: Custom tool name. Defaults to '{base_name}_{action}'.
+        name: Custom tool name. If not provided, will be generated from ViewSet and action.
         title: Human-readable title for the tool.
         description: Custom description for the tool.
     
     Example:
-        mcp_action(CustomerViewSet, 'list', 
-                  name='list_all_customers',
-                  title='List All Customers',
-                  description='Get a list of all customers in the system')
+        class CustomerViewSet(ModelViewSet):
+            @mcp_tool(name='list_all_customers', 
+                     title='List All Customers',
+                     description='Get a list of all customers in the system')
+            def list(self, request):
+                return super().list(request)
     """
-    # TODO: We should DRY this up, its the same as what's in registry.py
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            return func(self, *args, **kwargs)
+        
+        # Store MCP metadata on the function
+        wrapper._mcp_custom_name = name
+        wrapper._mcp_title = title
+        wrapper._mcp_description = description
+        wrapper._mcp_needs_registration = True
+        
+        return wrapper
     
-    # Generate default tool name if not provided
-    if name is None:
-        base_name = viewset_class.__name__.replace('ViewSet', '').lower()
-        if hasattr(viewset_class, 'queryset') and viewset_class.queryset is not None:
-            model = viewset_class.queryset.model
-            base_name = model.__name__.lower() + 's'
-        name = f"{base_name}_{action}"
-    
-    # Register the single action as a tool
-    registry.register_tool(
-        tool_name=name,
-        viewset_class=viewset_class,
-        action=action,
-        title=title,
-        description=description
-    )
-
-# Create the main decorator instance
-mcp_tool = MCPToolDecorator
+    return decorator

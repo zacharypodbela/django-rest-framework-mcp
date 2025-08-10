@@ -31,15 +31,15 @@ urlpatterns = [
 4. Transform any DRF ViewSet into MCP tools with a single decorator:
 
 ```python
-from djangorestframework_mcp.decorators import mcp_tool
+from djangorestframework_mcp.decorators import mcp_viewset
 
-@mcp_tool()
+@mcp_viewset()
 class CustomerViewSet(ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
 ```
 
-With that one line of code all CRUD actions of your ViewSet are exposed as MCP tools:
+With that one line of code all actions of your ViewSet are exposed as MCP tools. On a standard `ModelViewSet` the following tools would be created:
 
 - List customers with `customers_list`
 - Retrieve a customer with `customers_retrieve`
@@ -47,11 +47,11 @@ With that one line of code all CRUD actions of your ViewSet are exposed as MCP t
 - Update customers with `customers_update`
 - Delete customers with `customers_destroy`
 
-The library automatically:
+If you've added additional endpoints using the @action decorator those will automatically be detected and added as tools as well. For every tool the library automatically:
 
 - Generates tool schemas from your DRF serializers
 - Preserves your existing permissions, authentication, and filtering
-- Provides helpful error messages to guide LLMs
+- Returns context rich error messages to guide LLMs
 
 5. Connect any MCP client to `http://localhost:8000/mcp/` and try it out!
 
@@ -87,19 +87,48 @@ Follow these instructions to use `mcp-remote` to connect to Claude Desktop:
 
 ## Advanced Configuration
 
-### Custom Tool Names and Descriptions
+### Registering Individual Actions
 
-Override the default tool names to help LLMs understand your tools better:
+If you don't want to create a tool from every action of a ViewSet, you have two options:
+
+#### Option 1: Individually Register Actions with @mcp_tool
 
 ```python
-@mcp_tool(name="customer_management")
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
 
-    @mcp_tool.action(
-        name="get_customer",
-        description="Retrieve a specific customer by their ID"
+    @mcp_tool()
+    def banish(self, request, pk=None):
+        # ... Business Logic
+```
+
+#### Option 2: Pass an actions array to the @mcp_viewset
+
+```python
+@mcp_tool(actions=['banish'])
+class CustomerViewSet(viewsets.ModelViewSet):
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer
+
+    def banish(self, request, pk=None):
+        # ... Business Logic
+```
+
+### Custom Tool Names and Descriptions
+
+You can add additional context about your MCP tools to help LLMs understand your tools better using the `@mcp_tool` decorator:
+
+```python
+@mcp_viewset(name="customer_management")
+class CustomerViewSet(viewsets.ModelViewSet):
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer
+
+    @mcp_tool(
+        name="get_customer_details",
+        title="Get Customer Details",
+        description="Retrieve detailed information about a specific customer by their ID"
     )
     def retrieve(self, request, pk=None):
         return super().retrieve(request, pk)
@@ -114,7 +143,7 @@ Sometimes you want different behavior for MCP requests vs regular API requests. 
 Create a dedicated ViewSet for MCP that inherits from your existing ViewSet.
 
 ```python
-@mcp_tool()
+@mcp_viewset()
 class CustomerMCPViewSet(CustomerViewSet):
     # Limit MCP clients to active customers only
     queryset = super().get_queryset().filter(is_active=True)
@@ -132,7 +161,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 Use the `request.is_mcp_request` property to conditionally modify behavior within your existing ViewSet.
 
 ```python
-@mcp_tool()
+@mcp_viewset()
 class CustomerViewSet(viewsets.ModelViewSet):
     def get_queryset(self, request):
         queryset = Customer.objects.all()
@@ -254,21 +283,23 @@ class CustomerMCPTests(MCPTestCase):
 
 ### Decorators
 
-#### `@mcp_tool(name=None)`
+#### `@mcp_viewset(name=None, actions=None)`
 
-Decorator for ViewSets to expose as MCP tools.
+Class decorator for ViewSets to expose all or selected actions as MCP tools.
 
 **Parameters:**
 
 - `name` (str, optional): Custom name for the tool set. Defaults to the ViewSet's model name.
+- `actions` (list, optional): List of specific actions to expose. If None, all available actions are exposed.
 
-#### `@mcp_tool.action(name=None, description=None)`
+#### `@mcp_tool(name=None, title=None, description=None)`
 
-Decorator for individual ViewSet actions to customize their MCP exposure.
+Method decorator for individual ViewSet actions to customize their MCP exposure.
 
 **Parameters:**
 
-- `name` (str, optional): Custom name for this specific action.
+- `name` (str, optional): Custom name for this specific action. If not provided, will be auto-generated from the action name.
+- `title` (str, optional): Human-readable title for the tool.
 - `description` (str, optional): Description for this specific action.
 
 ### Extended HttpRequest Properties
