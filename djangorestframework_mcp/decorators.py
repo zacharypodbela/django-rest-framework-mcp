@@ -45,7 +45,7 @@ class MCPViewSetDecorator:
 mcp_viewset = MCPViewSetDecorator
 
 def mcp_tool(name: Optional[str] = None, title: Optional[str] = None, 
-             description: Optional[str] = None):
+             description: Optional[str] = None, input_serializer=...):
     """
     Decorator for individual ViewSet actions to customize their MCP tool metadata.
     
@@ -56,6 +56,8 @@ def mcp_tool(name: Optional[str] = None, title: Optional[str] = None,
         name: custom_tool_name. If not provided, will be generated from ViewSet and action.
         title: Human-readable title for the tool.
         description: Custom description for the tool.
+        input_serializer: Serializer class for input validation. Required for custom actions 
+                         (can be None). Optional for CRUD actions.
     
     Example:
         @mcp_viewset()
@@ -65,8 +67,13 @@ def mcp_tool(name: Optional[str] = None, title: Optional[str] = None,
                      description='Get a list of all customers in the system')
             def list(self, request):
                 return super().list(request)
+                
+            @mcp_tool(input_serializer=GenerateInputSerializer)
+            @action(detail=False, methods=['post'])
+            def generate(self, request):
+                return Response({'result': 'generated'})
     """
-    # TODO: Check to make sure this is only being decorated on something that was decorated with @action
+    # TODO: Do we need to check to make sure this is only being decorated on something that was decorated with @action?
     # TODO: Is there a way to make sure this is only being decorated on views that have @mcp_viewset? Or no b/c that runs after?
 
     def decorator(func):
@@ -79,6 +86,10 @@ def mcp_tool(name: Optional[str] = None, title: Optional[str] = None,
         wrapper._mcp_title = title
         wrapper._mcp_description = description
         wrapper._mcp_needs_registration = True
+        
+        # Only store serializer attributes if they were explicitly provided
+        if input_serializer is not ...:
+            wrapper._mcp_input_serializer = input_serializer
         
         return wrapper
     

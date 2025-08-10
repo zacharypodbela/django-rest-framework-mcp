@@ -5,6 +5,7 @@ from rest_framework import serializers
 from rest_framework.fields import Field
 from rest_framework.viewsets import ViewSetMixin
 from rest_framework.settings import api_settings
+from .types import MCPTool
 
 
 # Schema generator functions - each field type handles all its own logic
@@ -214,43 +215,58 @@ def serializer_to_json_schema(serializer_class: Type[serializers.Serializer],
     return schema
 
 
-def generate_tool_schema(viewset_class: Type[ViewSetMixin], action: str) -> Dict[str, Any]:
+def generate_body_schema(tool: MCPTool) -> Dict[str, Any]:
     """
-    Generate MCP tool schema for a ViewSet action using kwargs+body structure.
-    
-    This separates method arguments (kwargs) from request data (body) to make
-    it easier to map MCP parameters to ViewSet method calls.
+    Generate the body schema for a ViewSet action.
     
     Args:
-        viewset_class: The ViewSet class.
+        tool: The MCPTool object containing all tool information.
+    
+    Returns:
+        Dict containing body schema and whether body is required.
+    """
+    serializer_class = None
+    # If input serializer was explicitly provided, use it
+    if hasattr(tool, 'input_serializer'):
+        serializer_class = tool.input_serializer
+
+        if serializer_class is None:
+            # Explicitly set to None - no input needed
+            return {'schema': None, 'is_required': False}
+        
+    # Fall back to using view_class serializer if input_serializer not provided
+    else:
+        # For list, retrieve, destroy actions where no custom input_serializer was provided, we don't expect input
+        if tool.action in ['list', 'retrieve', 'destroy']:
+            return {'schema': None, 'is_required': False}
+
+        instance = tool.viewset_class()
+        instance.action = tool.action
+        serializer_class = instance.get_serializer_class()
+    
+    body_schema = serializer_to_json_schema(serializer_class, for_input=True)
+        
+    return {
+        'schema': body_schema,
+        'is_required': body_schema.get('required')
+    }
+
+
+def generate_kwargs_schema(action: str) -> Dict[str, Any]:
+    """
+    Generate the kwargs schema for a ViewSet action.
+    
+    Args:
         action: The action name (list, retrieve, create, etc.).
     
     Returns:
-        MCP tool schema dict with structured input.
+        Dict containing kwargs schema and whether kwargs are required.
     """
-    schema: Dict[str, Any] = {
-        'inputSchema': {
-            'type': 'object',
-            'properties': {},
-            'required': []
-        }
-    }
-    
-    # Get the serializer class
-    instance = viewset_class()
-    instance.action = action
-    # get_serializer_class() will throw an AssertionError if no serializer is set. 
-    # Later we may want to support ViewSets without a serializer, but for now we require one.
-    serializer_class = instance.get_serializer_class()
-
-    # Generate structured input schema based on action
-    properties = {}
-    required = []
-    
-    # Generate kwargs schema (method arguments)
     kwargs_properties = {}
     kwargs_required = []
-    
+
+    # TODO: Should be generalized to look at method signature. We should still have special cases of generating description for viewclass.lookup_kwarg
+
     if action in ['retrieve', 'update', 'partial_update', 'destroy']:
         # These actions need a pk in kwargs
         kwargs_properties['pk'] = {
@@ -267,28 +283,60 @@ def generate_tool_schema(viewset_class: Type[ViewSetMixin], action: str) -> Dict
             'default': True
         }
     
-    # Add kwargs to schema if needed
+    # Build the kwargs schema if we have any properties
     if kwargs_properties:
-        properties['kwargs'] = {
-            'type': 'object',
-            'properties': kwargs_properties,
-            'required': kwargs_required if kwargs_required else []
+        return {
+            'schema': {
+                'type': 'object',
+                'properties': kwargs_properties,
+                'required': kwargs_required if kwargs_required else []
+            },
+            'is_required': bool(kwargs_required)
         }
-        if kwargs_required:
+    
+    return {'schema': None, 'is_required': False}
+
+
+def generate_tool_schema(tool: MCPTool) -> Dict[str, Any]:
+    """
+    Generate MCP tool schema for a ViewSet action using kwargs+body structure.
+    
+    This separates method arguments (kwargs) from request data (body) to make
+    it easier to map MCP parameters to ViewSet method calls.
+    
+    Args:
+        tool: The MCPTool object containing all tool information.
+    
+    Returns:
+        MCP tool schema dict with structured input.
+    """
+    # Generate the component schemas
+    kwargs_info = generate_kwargs_schema(tool.action)
+    body_info = generate_body_schema(tool)
+    
+    # Stitch together the top-level inputSchema
+    properties = {}
+    required = []
+    
+    # Add kwargs if present
+    if kwargs_info['schema']:
+        properties['kwargs'] = kwargs_info['schema']
+        if kwargs_info['is_required']:
             required.append('kwargs')
     
-    # Generate body schema (request.data)
-    if action in ['create', 'update', 'partial_update'] and serializer_class:
-        body_schema = serializer_to_json_schema(serializer_class, for_input=True)
-        properties['body'] = body_schema
-        
-        # For create and update (but not partial_update), body is required if it has required fields
-        if action in ['create', 'update'] and body_schema.get('required'):
+    # Add body if present  
+    if body_info['schema']:
+        properties['body'] = body_info['schema']
+        if body_info['is_required']:
             required.append('body')
     
-    # Set the final schema
-    schema['inputSchema']['properties'] = properties
-    if required:
-        schema['inputSchema']['required'] = required
+    # Build final schema
+    schema = {
+        'inputSchema': {
+            'type': 'object',
+            'properties': properties,
+            'required': required if required else []
+        }
+    }
     
     return schema

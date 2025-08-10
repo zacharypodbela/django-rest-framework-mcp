@@ -1,14 +1,16 @@
 """Registry to track MCP tools from Django REST Framework ViewSets."""
 
-from typing import Dict, List, Optional, Type, Any
+from typing import Dict, List, Optional, Type
 from rest_framework.viewsets import ViewSetMixin
+from .types import MCPTool
 
+STANDARD_ACTIONS = ['list', 'create', 'retrieve', 'update', 'partial_update', 'destroy']
 
 class MCPRegistry:
     """Central registry for MCP tools."""
     
     def __init__(self):
-        self._tools: Dict[str, Dict[str, Any]] = {}
+        self._tools: Dict[str, MCPTool] = {}
     
     def register_viewset(self, viewset_class: Type[ViewSetMixin], actions: Optional[List[str]] = None, base_name: Optional[str] = None):
         """Register all actions from a ViewSet as MCP tools."""
@@ -21,6 +23,8 @@ class MCPRegistry:
                 base_name = model.__name__.lower() + 's'
                 
         # Register each action as a separate tool
+        # TODO: Now that we required @mcp_tool to be explicitly called on custom actions, we should move to only registering those 
+        # that were decorated instead of autodetecting all actions 
         all_actions = self._get_viewset_actions(viewset_class)
         for action_name in all_actions:
             if actions and action_name not in actions:
@@ -28,42 +32,47 @@ class MCPRegistry:
             
             # Check if the method has @mcp_tool metadata
             method = getattr(viewset_class, action_name, None)
-            custom_name = getattr(method, '_mcp_tool_name', None) if method else None
-            custom_title = getattr(method, '_mcp_title', None) if method else None
-            custom_description = getattr(method, '_mcp_description', None) if method else None
+            if not method:
+                # This should never happen. If it does, something went wrong in `_get_viewset_actions`
+                continue
+
+            custom_name = getattr(method, '_mcp_tool_name', None)
+            custom_title = getattr(method, '_mcp_title', None)
+            custom_description = getattr(method, '_mcp_description', None)
             
             # Use custom values if provided, otherwise generate defaults
             tool_name = custom_name if custom_name else f"{base_name}_{action_name}"
             title = custom_title if custom_title else self._generate_tool_title(action_name, base_name)
             description = custom_description if custom_description else f"{action_name.capitalize()} {base_name}"
             
-            self.register_tool(
-                tool_name=tool_name,
+            # Create the MCPTool object
+            tool = MCPTool(
+                name=tool_name,
                 viewset_class=viewset_class,
                 action=action_name,
                 title=title,
                 description=description
             )
+            
+            
+            # Set input_serializer if it was explicitly provided
+            if hasattr(method, '_mcp_input_serializer'):
+                tool.input_serializer = getattr(method, '_mcp_input_serializer')
+            else:
+                # Custom actions must have input_serializer explicitly defined
+                is_custom_action = action_name not in STANDARD_ACTIONS
+                if is_custom_action:
+                    raise ValueError(
+                        f"Custom action '{action_name}' on {viewset_class.__name__} requires "
+                        f"explicit input_serializer parameter in @mcp_tool decorator. "
+                        f"This can be set to None if no input is needed."
+                    )
+
+            self._tools[tool_name] = tool
         
         return viewset_class
     
-    def register_tool(self, tool_name: str, viewset_class: Type[ViewSetMixin], action: str,
-                     title: Optional[str] = None, description: Optional[str] = None):
-        """Register a single action as an MCP tool."""
-        tool = {
-            'name': tool_name,
-            'viewset_class': viewset_class,
-            'action': action,
-        }
-
-        if title:
-            tool['title'] = title
-        if description:
-            tool['description'] = description
-
-        self._tools[tool_name] = tool
-    
-    def get_all_tools(self) -> List[Dict[str, Any]]:
+    def get_all_tools(self) -> List[MCPTool]:
         """Get all registered MCP tools."""
         return list(self._tools.values())
     
@@ -76,12 +85,9 @@ class MCPRegistry:
         """
         actions = []
         
-        # Standard CRUD actions
-        standard_actions = ['list', 'create', 'retrieve', 'update', 'partial_update', 'destroy']
-        
         # Check which standard actions the ViewSet actually implements
         # This is equivalent to router's get_method_map() logic
-        for action in standard_actions:
+        for action in STANDARD_ACTIONS:
             if hasattr(viewset_class, action):
                 actions.append(action)
         
@@ -92,7 +98,7 @@ class MCPRegistry:
         
         return actions
     
-    def get_tool_by_name(self, tool_name: str) -> Optional[Dict[str, Any]]:
+    def get_tool_by_name(self, tool_name: str) -> Optional[MCPTool]:
         """Get a specific tool by name."""
         return self._tools.get(tool_name)
     

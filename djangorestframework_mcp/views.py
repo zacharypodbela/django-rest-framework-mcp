@@ -8,6 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from .registry import registry
 from .schema import generate_tool_schema
+from .types import MCPTool
 
 @method_decorator(csrf_exempt, name='dispatch')
 class MCPView(View):
@@ -80,21 +81,18 @@ class MCPView(View):
         """Handle tools/list request."""
         tools = []
         
-        for tool_info in registry.get_all_tools():
-            tool_schema = generate_tool_schema(
-                tool_info['viewset_class'],
-                tool_info['action']
-            )
+        for tool in registry.get_all_tools():
+            tool_schema = generate_tool_schema(tool)
             
             tool_dict = {
-                'name': tool_info['name'],
-                'description': tool_info['description'],
+                'name': tool.name,
+                'description': tool.description,
                 'inputSchema': tool_schema['inputSchema']
             }
             
             # Add title if present
-            if 'title' in tool_info:
-                tool_dict['title'] = tool_info['title']
+            if tool.title:
+                tool_dict['title'] = tool.title
             
             tools.append(tool_dict)
         
@@ -107,13 +105,13 @@ class MCPView(View):
         
         try:
             # Find the tool
-            tool_info = registry.get_tool_by_name(tool_name)
-            if not tool_info:
+            tool = registry.get_tool_by_name(tool_name)
+            if not tool:
                 # This should be handled as a protocol-level error, not a tool execution error
                 raise Exception(f"Tool not found: {tool_name}")
             
             # Execute the tool
-            result = self.execute_tool(request, tool_info, tool_params)
+            result = self.execute_tool(request, tool, tool_params)
 
             # Per latest MCP specification (2025-06-18), JSON should be returned in both
             # structured content and as stringified text content (the latter for backwards compatibility)
@@ -160,11 +158,11 @@ class MCPView(View):
             'id': request_id
         })
 
-    def execute_tool(self, request, tool_info: Dict[str, Any], 
+    def execute_tool(self, request, tool: MCPTool, 
                     params: Dict[str, Any]) -> Any:
         """Execute a tool using the structured kwargs+body parameter format."""
-        viewset_class = tool_info['viewset_class']
-        action = tool_info['action']
+        viewset_class = tool.viewset_class
+        action = tool.action
         
         # Create ViewSet instance with proper DRF setup
         viewset = viewset_class()
