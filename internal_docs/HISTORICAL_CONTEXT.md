@@ -73,3 +73,37 @@ The current approach is actually quite elegant because:
 4. **Debuggable** – Standard Django request/response cycle
 
 > The SDK approach was actually tried (the deleted `server.py`) but abandoned because the Django integration complexity outweighed the protocol simplification benefits.
+
+# Q: Why do we require developers to pass in an input serializer classes for custom actions?
+
+## The Problem We Encountered
+
+We initially tried to generalize schema generation by automatically detecting body input needed by the endpoint by inspecting serializer fields for writeable (non-read-only) fields. However, this approach failed because business logic determines data requirements, not serializer definitions.
+
+A custom action might need completely different fields than what's in the ViewSet's main serializer:
+
+```python
+@action(detail=False, methods=['post'])
+def generate(self, request):
+    user_prompt = request.data['user_prompt']
+    llm_response = call_llm(user_prompt)
+    return Response({'llm_response': llm_response})
+```
+
+Even for CRUD endpoints, the relationship between serializers and actual data usage is loose - A ViewSet might override the default implementation of a CRUD action to use something different than what's in the serializer:
+
+```python
+def create(self, request, *args, **kwargs):
+    if request.data.get('send_email_on_create'):
+        send_email()
+
+    return super().create(request, *args, **kwargs)
+```
+
+## Our Architectural Decision
+
+We decided to extend the existing @mcp_tool decorator to accept a serializer parameter that lets developers explicitly declare input requirements. It is required for custom actions and optional for default CRUD actions. This approach makes sense because:
+
+- Integrates cleanly with existing decorator architecture
+- Only the developer knows what their business logic actually needs - we can't guess it from static analysis of serializer definitions alone.
+- We need a full Serializer class as opposed to just a dictionary representing the schema b/c the dictionaries don't provide enough context to fill out the description, format, etc. which is essential for good LLM performance.

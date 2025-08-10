@@ -48,11 +48,13 @@ When `@mcp_viewset` is applied to a `ViewSet`, any of the following methods that
 - `partial_update` -> Update customers with `customers_partial_update` tool. (A subset of fields can be passed in)
 - `destroy` -> Delete customers with `customers_destroy` tool.
 
-If you've created additional endpoints using the `@action` decorator those will automatically be detected and added as tools as well. For every tool the library automatically:
+For each tool the library automatically:
 
-- Generates tool schemas from your DRF serializers. (Note that either `serializer_class` or `get_serializer_class()` must be set.)
+- Generates tool schemas from your DRF serializers
 - Preserves your existing permissions, authentication, and filtering
 - Returns context rich error messages to guide LLMs
+
+(See: _Custom Actions_ below for more info on how to expose additional endpoints you created using the `@action` decorator as tools).
 
 5. Connect any MCP client to `http://localhost:8000/mcp/` and try it out!
 
@@ -87,6 +89,52 @@ Follow these instructions to use `mcp-remote` to connect to Claude Desktop:
 3. Restart Claude Desktop and test your tools
 
 ## Advanced Configuration
+
+### Custom Actions
+
+Custom actions (created with the `@action` decorator) require explicit schema definition since there aren't standard input defaults like with CRUD endpoints. To create a tool from a custom action, apply the `@mcp_tool` decorator and pass in an `input_serializer`:
+
+```python
+from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+
+class GenerateInputSerializer(serializers.Serializer):
+    user_prompt = serializers.CharField(help_text="The prompt to send to the LLM")
+
+@mcp_viewset()
+class ContentViewSet(viewsets.ViewSet):
+    @mcp_tool(input_serializer=GenerateInputSerializer)
+    @action(detail=False, methods=['post'])
+    def generate(self, request):
+        user_prompt = request.data['user_prompt']
+        llm_response = call_llm(user_prompt)
+        return Response({'llm_response': llm_response})
+```
+
+For custom actions that don't require input, set `input_serializer=None`:
+
+```python
+@mcp_tool(input_serializer=None)  # No input needed
+@action(detail=False, methods=['get'])
+def recent_posts(self, request):
+    recent_posts = Post.objects.filter(created_at__gte=timezone.now() - timedelta(days=7))
+    serializer = PostListSerializer(recent_posts, many=True)
+    return Response(serializer.data)
+```
+
+For CRUD actions (`list`, `retrieve`, `create`, `update`, `partial_update`, `destroy`), `input_serializer` is **optional**. The library will default to inferring schemas from the ViewSet's `serializer_class` if `input_serializer` is not specified. You'll want to use this optional parameter if you've written custom business logic that changes the input schema of a CRUD endpoint.
+
+```python
+class ExtendedPostSerializer(PostSerializer): # Inherits and extends standard CRUD serializer
+    add_created_at_footer = serializers.BooleanField(help_text="Setting to true appends the author name")
+
+@mcp_tool(input_serializer=ExtendedPostSerializer)
+def create(self, request, *args, **kwargs):
+    if request.data.get('add_created_at_footer'):
+        # Append text to the end of the content noting it was created via MCP
+        request.data['content'] += f"\n\n*Created by {request.user.name}*"
+
+    return super().create(request, *args, **kwargs)
+```
 
 ### Selective Action Registration
 
@@ -280,7 +328,7 @@ Class decorator for ViewSets to expose all or selected actions as MCP tools.
 - `name` (str, optional): Custom name for the tool set. Defaults to the ViewSet's model name.
 - `actions` (list, optional): List of specific actions to expose. If None, all available actions are exposed.
 
-#### `@mcp_tool(name=None, title=None, description=None)`
+#### `@mcp_tool(name=None, title=None, description=None, input_serializer=...)`
 
 Method decorator for individual ViewSet actions to customize their MCP exposure.
 
@@ -289,6 +337,7 @@ Method decorator for individual ViewSet actions to customize their MCP exposure.
 - `name` (str, optional): Custom name for this specific action. If not provided, will be auto-generated from the action name.
 - `title` (str, optional): Human-readable title for the tool.
 - `description` (str, optional): Description for this specific action.
+- `input_serializer` (Serializer class or None, required for custom actions): Serializer class for input validation. Required for custom actions (can be None). Optional for CRUD actions.
 
 ### Extended HttpRequest Properties
 
