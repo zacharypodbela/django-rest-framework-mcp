@@ -12,7 +12,11 @@ from blog.serializers import BulkPostSerializer, CreatePostSerializer, PostSeria
 @mcp_viewset()
 class PostViewSet(viewsets.ModelViewSet):
     queryset = Post.objects.all()
-    serializer_class = PostSerializer
+
+    def get_serializer_class(self):
+        if self.action == 'bulk_create':
+            return BulkPostSerializer
+        return PostSerializer
 
     # DEMO: For overridden CRUD actions, use input_serializer if the input is different from the serializer_class
     # DEMO: Custom logic using is_mcp_request works
@@ -55,15 +59,5 @@ class PostViewSet(viewsets.ModelViewSet):
         input_serializer=BulkPostSerializer
     )
     @action(detail=False, methods=['post'])
-    def bulk_create(self, request):
-        posts = request.data
-        created_posts = []
-        for post_data in posts:
-            serializer = PostSerializer(data=post_data)
-            if serializer.is_valid():
-                post = serializer.save()
-                created_posts.append(post)
-            else:
-                return Response(serializer.errors, status=400)
-
-        return Response(PostSerializer(created_posts, many=True).data, status=201)
+    def bulk_create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)

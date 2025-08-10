@@ -122,6 +122,8 @@ def get_list_serializer_schema(serializer: serializers.ListSerializer) -> Dict[s
     }
 
 # Field type registry - maps DRF field classes to their schema generator functions
+# These are checked in order. If a class inherits from another in the list, its important the subclass be first or it will
+# never be choosen. (Ex: ListSerializer inherits from BaseSerializer)
 FIELD_TYPE_REGISTRY = {
     serializers.BooleanField: get_boolean_schema,
     serializers.IntegerField: get_integer_schema,
@@ -144,6 +146,12 @@ def get_base_schema_for_field(field: Field) -> Dict[str, Any]:
     
     Walks up the MRO to find the most specific registered type and calls
     its schema generator function.
+    
+    Args:
+        field: The DRF field to generate schema for.
+    
+    Returns:
+        Base JSON schema dict from the registry.
     """
     # Walk up the MRO to find the most specific registered type
     for field_class in type(field).__mro__:
@@ -168,6 +176,12 @@ def field_to_json_schema(field: Field) -> Dict[str, Any]:
     - default: Default value if provided
     - title: Human-readable title from label
     - description: Description from help_text plus field-specific format info
+
+    Args:
+        field: The DRF field to convert.
+
+    Returns:
+        A JSON schema dict representing the field.
     """
     # Get complete schema from registry (includes all field-specific logic)
     schema = get_base_schema_for_field(field)
