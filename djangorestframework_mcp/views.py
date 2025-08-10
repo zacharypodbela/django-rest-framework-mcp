@@ -86,11 +86,17 @@ class MCPView(View):
                 tool_info['action']
             )
             
-            tools.append({
+            tool_dict = {
                 'name': tool_info['name'],
                 'description': tool_info['description'],
                 'inputSchema': tool_schema['inputSchema']
-            })
+            }
+            
+            # Add title if present
+            if 'title' in tool_info:
+                tool_dict['title'] = tool_info['title']
+            
+            tools.append(tool_dict)
         
         return {'tools': tools}
     

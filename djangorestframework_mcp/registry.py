@@ -1,101 +1,129 @@
-"""Registry to track MCP-enabled ViewSets and their configurations."""
+"""Registry to track MCP tools from Django REST Framework ViewSets."""
 
 from typing import Dict, List, Optional, Type, Any
 from rest_framework.viewsets import ViewSetMixin
 
 
 class MCPRegistry:
-    """Central registry for MCP-enabled ViewSets."""
+    """Central registry for MCP tools."""
     
     def __init__(self):
-        self._viewsets: Dict[str, Dict[str, Any]] = {}
+        self._tools: Dict[str, Dict[str, Any]] = {}
     
-    def register(self, viewset_class: Type[ViewSetMixin], name: Optional[str] = None):
-        """Register a ViewSet as an MCP tool."""
-        if name is None:
-            # Generate name from viewset class
-            name = viewset_class.__name__.replace('ViewSet', '').lower()
+    def register_viewset(self, viewset_class: Type[ViewSetMixin], actions: Optional[List[str]] = None, base_name: Optional[str] = None):
+        """Register all actions from a ViewSet as MCP tools."""
+        if base_name is None:
+            # Generate base name from queryset model (if one exists) or viewset class
+            base_name = viewset_class.__name__.replace('ViewSet', '').lower()
             if hasattr(viewset_class, 'queryset') and viewset_class.queryset is not None:
                 model = viewset_class.queryset.model
-                name = model.__name__.lower() + 's'
-        
-        self._viewsets[name] = {
-            'viewset_class': viewset_class,
-            'name': name,
-            'actions': {}
-        }
+                base_name = model.__name__.lower() + 's'
+                
+        # Register each action as a separate tool
+        all_actions = self._get_viewset_actions(viewset_class)
+        for action_name in all_actions:
+            if actions and action_name not in actions:
+                continue
+            tool_name = f"{base_name}_{action_name}"
+            self.register_tool(
+                tool_name=tool_name,
+                viewset_class=viewset_class,
+                action=action_name,
+                title=self._generate_tool_title(action_name, base_name),
+                description=f"{action_name.capitalize()} {base_name}"
+            )
         
         return viewset_class
     
-    def register_action(self, viewset_name: str, action_name: str, 
-                       custom_name: Optional[str] = None,
-                       description: Optional[str] = None):
-        """Register a specific action configuration for a ViewSet."""
-        if viewset_name in self._viewsets:
-            self._viewsets[viewset_name]['actions'][action_name] = {
-                'name': custom_name or action_name,
-                'description': description
-            }
+    def register_tool(self, tool_name: str, viewset_class: Type[ViewSetMixin], action: str,
+                     title: Optional[str] = None, description: Optional[str] = None):
+        """Register a single action as an MCP tool."""
+        tool = {
+            'name': tool_name,
+            'viewset_class': viewset_class,
+            'action': action,
+        }
+
+        # TODO: LLM performance will be bad if there is no descriptions (or at least titles). We should 
+        # rethink if there should be a warning here or if one of these values should be required.
+
+        if title:
+            tool['title'] = title
+        if description:
+            tool['description'] = description
+
+        self._tools[tool_name] = tool
     
     def get_all_tools(self) -> List[Dict[str, Any]]:
         """Get all registered MCP tools."""
-        tools = []
-        for viewset_info in self._viewsets.values():
-            viewset_class = viewset_info['viewset_class']
-            base_name = viewset_info['name']
-            
-            # Get available actions from the ViewSet
-            actions = self._get_viewset_actions(viewset_class)
-            
-            for action_name in actions:
-                tool_name = f"{base_name}_{action_name}"
-                action_config = viewset_info['actions'].get(action_name, {})
-                
-                if action_config.get('name'):
-                    tool_name = action_config['name']
-                
-                tools.append({
-                    'name': tool_name,
-                    'description': action_config.get('description') or f"{action_name.capitalize()} {base_name}",
-                    'viewset_class': viewset_class,
-                    'action': action_name,
-                    'base_name': base_name
-                })
-        
-        return tools
+        return list(self._tools.values())
     
     def _get_viewset_actions(self, viewset_class: Type[ViewSetMixin]) -> List[str]:
         """Determine available actions for a ViewSet."""
         actions = []
+
+        # TODO: Generalize implementation to add support for custom @action decorators
+
+        # Import here to avoid circular dependencies
+        from rest_framework.mixins import (
+            CreateModelMixin, RetrieveModelMixin, UpdateModelMixin,
+            DestroyModelMixin, ListModelMixin
+        )
         
-        # Standard ModelViewSet actions
-        if hasattr(viewset_class, 'list'):
-            actions.append('list')
-        if hasattr(viewset_class, 'retrieve'):
-            actions.append('retrieve')
-        if hasattr(viewset_class, 'create'):
-            actions.append('create')
-        if hasattr(viewset_class, 'update'):
-            actions.append('update')
-        if hasattr(viewset_class, 'partial_update'):
-            actions.append('partial_update')
-        if hasattr(viewset_class, 'destroy'):
-            actions.append('destroy')
+        # Check which mixins the ViewSet has
+        mixin_actions = {
+            'list': ListModelMixin,
+            'retrieve': RetrieveModelMixin, 
+            'create': CreateModelMixin,
+            'update': UpdateModelMixin,
+            'partial_update': UpdateModelMixin,  # Both update actions come from UpdateModelMixin
+            'destroy': DestroyModelMixin
+        }
         
-        # TODO: Add support for custom @action decorators
+        for action, mixin in mixin_actions.items():
+            # Check if ViewSet has this mixin and the method
+            if issubclass(viewset_class, mixin) and hasattr(viewset_class, action):
+                method = getattr(viewset_class, action)
+                if callable(method):
+                    actions.append(action)
         
         return actions
     
     def get_tool_by_name(self, tool_name: str) -> Optional[Dict[str, Any]]:
         """Get a specific tool by name."""
-        for tool in self.get_all_tools():
-            if tool['name'] == tool_name:
-                return tool
-        return None
+        return self._tools.get(tool_name)
+    
+    def update_tool(self, tool_name: str, title: Optional[str] = None,
+                    description: Optional[str] = None, custom_name: Optional[str] = None):
+        """Update an existing tool's configuration."""
+        if tool_name in self._tools:
+            if title is not None:
+                self._tools[tool_name]['title'] = title
+            if description is not None:
+                self._tools[tool_name]['description'] = description
+            if custom_name is not None:
+                # Update the tool with new name
+                tool_info = self._tools.pop(tool_name)
+                tool_info['name'] = custom_name
+                self._tools[custom_name] = tool_info
+    
+    def _generate_tool_title(self, action: str, base_name: str) -> str:
+        """Generate a human-readable title for a tool."""
+        # Map actions to more readable titles
+        base_title = base_name.replace('_', ' ').title()
+        action_titles = {
+            'list': f'List {base_title}',
+            'retrieve': f'Get {base_title.rstrip("s")}',  # Remove plural 's' for single item
+            'create': f'Create {base_title.rstrip("s")}',
+            'update': f'Update {base_title.rstrip("s")}',
+            'partial_update': f'Partially Update {base_title.rstrip("s")}',
+            'destroy': f'Delete {base_title.rstrip("s")}'
+        }
+        return action_titles.get(action, f'{action.title()} {base_title}')
     
     def clear(self):
-        """Clear all registered ViewSets."""
-        self._viewsets.clear()
+        """Clear all registered tools."""
+        self._tools.clear()
 
 
 # Global registry instance
