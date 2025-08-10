@@ -1,7 +1,6 @@
 """MCP HTTP endpoint views."""
 
 import json
-import contextvars
 from typing import Dict, Any, Optional
 from django.http import JsonResponse
 from django.views import View
@@ -9,9 +8,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from .registry import registry
 from .schema import generate_tool_schema
-
-# Context variable to store Django request
-django_request_ctx = contextvars.ContextVar("django_request")
 
 @method_decorator(csrf_exempt, name='dispatch')
 class MCPView(View):

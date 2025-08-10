@@ -299,6 +299,7 @@ Unsurprisingly, we're using AI tools pretty actively in our development workflow
 - **`djangorestframework_mcp/`**: The library source code
 - **`tests/`**: All tests (unit and integration)
 - **`demo/`**: A working Django app for manual testing
+- **`/internal-docs`**: Documentation about the implementation, strategy, and/or goals of the `django-rest-framework-api` project.
 - **`external-docs/`**: Offline documentation for AI agents to reference without web access (ex: The Model Context Protocol Specs)
 - **`source-code-of-dependencies/`**: Read-only references to important related packages for AI agents to reference without web access (ex: `django-rest-framework`)
 
