@@ -50,7 +50,7 @@ When `@mcp_viewset` is applied to a `ViewSet`, any of the following methods that
 
 If you've created additional endpoints using the `@action` decorator those will automatically be detected and added as tools as well. For every tool the library automatically:
 
-- Generates tool schemas from your DRF serializers
+- Generates tool schemas from your DRF serializers. (Note that either `serializer_class` or `get_serializer_class()` must be set.)
 - Preserves your existing permissions, authentication, and filtering
 - Returns context rich error messages to guide LLMs
 

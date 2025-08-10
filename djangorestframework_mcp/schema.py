@@ -237,21 +237,12 @@ def generate_tool_schema(viewset_class: Type[ViewSetMixin], action: str) -> Dict
     }
     
     # Get the serializer class
-    serializer_class = None
-    if hasattr(viewset_class, 'get_serializer_class'):
-        # Handle dynamic serializer class
-        try:
-            # Create a mock instance to get serializer class
-            instance = viewset_class()
-            instance.action = action
-            serializer_class = instance.get_serializer_class()
-        except:
-            # Fallback to direct attribute
-            if hasattr(viewset_class, 'serializer_class'):
-                serializer_class = viewset_class.serializer_class
-    elif hasattr(viewset_class, 'serializer_class'):
-        serializer_class = viewset_class.serializer_class
-    
+    instance = viewset_class()
+    instance.action = action
+    # get_serializer_class() will throw an AssertionError if no serializer is set. 
+    # Later we may want to support ViewSets without a serializer, but for now we require one.
+    serializer_class = instance.get_serializer_class()
+
     # Generate structured input schema based on action
     properties = {}
     required = []
