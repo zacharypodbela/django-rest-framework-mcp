@@ -13,7 +13,7 @@ class MCPRegistry:
         self._tools: Dict[str, MCPTool] = {}
     
     def register_viewset(self, viewset_class: Type[ViewSetMixin], actions: Optional[List[str]] = None, base_name: Optional[str] = None):
-        """Register all actions from a ViewSet as MCP tools."""
+        """Register actions from a ViewSet as MCPTools."""
         if base_name is None:
             # Generate base name from queryset model (if one exists) or viewset class
             # TODO: Default should be reversed to be action_base_name
@@ -22,19 +22,14 @@ class MCPRegistry:
                 model = viewset_class.queryset.model
                 base_name = model.__name__.lower() + 's'
                 
-        # Register each action as a separate tool
-        # TODO: Now that we required @mcp_tool to be explicitly called on custom actions, we should move to only registering those 
-        # that were decorated instead of autodetecting all actions 
-        all_actions = self._get_viewset_actions(viewset_class)
-        for action_name in all_actions:
+        # Register standard CRUD actions automatically, and custom actions only if decorated with @mcp_tool
+        registerable_actions = self._get_registerable_actions(viewset_class)
+        for action_name in registerable_actions:
             if actions and action_name not in actions:
                 continue
             
-            # Check if the method has @mcp_tool metadata
-            method = getattr(viewset_class, action_name, None)
-            if not method:
-                # This should never happen. If it does, something went wrong in `_get_viewset_actions`
-                continue
+            # Get the method (we know it exists since _get_registerable_actions found it)
+            method = getattr(viewset_class, action_name)
 
             custom_name = getattr(method, '_mcp_tool_name', None)
             custom_title = getattr(method, '_mcp_title', None)
@@ -76,25 +71,25 @@ class MCPRegistry:
         """Get all registered MCP tools."""
         return list(self._tools.values())
     
-    def _get_viewset_actions(self, viewset_class: Type[ViewSetMixin]) -> List[str]:
+    def _get_registerable_actions(self, viewset_class: Type[ViewSetMixin]) -> List[str]:
         """
-        Determine available actions for a ViewSet using the same approach as DRF routers.
-
-        The logic mirrors how DRF's SimpleRouter works to create a list of endpoints when a ViewSet
-        is registered without manual `.as_view` mapping. (i.e. `router.register(r'posts', PostViewSet)`)
+        Get actions that should be registered as MCP tools.
+        
+        Standard CRUD actions are automatically registered if they exist.
+        Custom actions are only registered if they have @mcp_tool decorator.
         """
         actions = []
         
-        # Check which standard actions the ViewSet actually implements
-        # This is equivalent to router's get_method_map() logic
+        # Standard actions are automatically registered if they exist
         for action in STANDARD_ACTIONS:
             if hasattr(viewset_class, action):
                 actions.append(action)
         
-        # Use DRF's built-in method to get custom @action decorated methods
+        # Custom @action decorated methods are only registered if they have @mcp_tool decoration
         extra_actions = viewset_class.get_extra_actions()
         for action in extra_actions:
-            actions.append(action.__name__)
+            if hasattr(action, '_mcp_needs_registration'):
+                actions.append(action.__name__)
         
         return actions
     

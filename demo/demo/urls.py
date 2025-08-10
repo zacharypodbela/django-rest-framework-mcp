@@ -2,11 +2,10 @@ from django.urls import include, path
 from django.contrib import admin
 from rest_framework import routers
 
-from blog.views import DashboardViewSet, PostViewSet
+from blog.views import PostViewSet
 
 router = routers.DefaultRouter()
 router.register(r'posts', PostViewSet)
-router.register(r'dashboard', DashboardViewSet, basename='dashboard')
 
 # Wire up our API using automatic URL routing.
 # Additionally, we include login URLs for the browsable API.
