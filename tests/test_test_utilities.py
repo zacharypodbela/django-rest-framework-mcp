@@ -4,25 +4,29 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 from django.test import TestCase, Client
-from djangorestframework_mcp.test import MCPTestCase
+from djangorestframework_mcp.test import MCPClient
 
 
-class TestMCPTestCase(unittest.TestCase):
-    """Test the MCPTestCase utility class."""
+class TestMCPClient(unittest.TestCase):
+    """Test the MCPClient utility class."""
     
     def setUp(self):
         """Set up test fixtures."""
-        self.test_case = MCPTestCase()
-        
-        # Mock the setUp to avoid Django setup issues in unit tests
-        with patch.object(TestCase, 'setUp'):
-            self.test_case.setUp()
+        # Create client without auto-initialization to test manually
+        self.client = MCPClient(auto_initialize=False)
     
     def test_initialization(self):
-        """Test MCPTestCase initialization."""
-        self.assertIsInstance(self.test_case.mcp_client, Client)
-        self.assertEqual(self.test_case.mcp_endpoint, '/mcp/')
-    
+        """Test MCPClient initialization."""
+        # Test manual initialization
+        self.assertFalse(self.client._initialized)
+        self.assertEqual(self.client.mcp_endpoint, '/mcp/')
+        
+    def test_auto_initialization(self):
+        """Test MCPClient auto-initialization."""
+        with patch.object(MCPClient, 'initialize'):
+            auto_client = MCPClient(auto_initialize=True)
+            auto_client.initialize.assert_called_once()
+
     def test_call_tool_success(self):
         """Test successful tool call."""
         # Mock response with proper MCP format
@@ -35,45 +39,45 @@ class TestMCPTestCase(unittest.TestCase):
                         'type': 'text',
                         'text': '{"data": "result"}'
                     }
-                ]
+                ],
+                'structuredContent': {'data': 'result'}
             },
             'id': 1
         }
         mock_response.content = json.dumps(response_data).encode()
         
-        # Mock the client post method
-        with patch.object(self.test_case.mcp_client, 'post', return_value=mock_response):
-            result = self.test_case.call_tool('test_tool', {'param': 'value'})
+        # Set client as initialized and mock the post method
+        self.client._initialized = True
+        with patch.object(self.client, 'post', return_value=mock_response):
+            result = self.client.call_tool('test_tool', {'param': 'value'})
             
-            self.assertEqual(result, {'data': 'result'})
+            self.assertEqual(result['structuredContent'], {'data': 'result'})
     
-    @patch('djangorestframework_mcp.test.json.loads')
-    def test_call_tool_with_error(self, mock_json_loads):
-        """Test tool call with MCP error response."""
+    def test_call_tool_with_protocol_error(self):
+        """Test tool call with MCP protocol error (should raise)."""
         mock_response = Mock()
-        mock_response.content = b'{"jsonrpc": "2.0", "error": {"code": -32600, "message": "Invalid request"}, "id": 1}'
-        
-        mock_json_loads.return_value = {
+        mock_response.content = json.dumps({
             'jsonrpc': '2.0',
             'error': {
                 'code': -32600,
                 'message': 'Invalid request'
             },
             'id': 1
-        }
+        }).encode()
         
-        with patch.object(self.test_case.mcp_client, 'post', return_value=mock_response):
+        # Set client as initialized and mock the post method
+        self.client._initialized = True
+        with patch.object(self.client, 'post', return_value=mock_response):
             with self.assertRaises(Exception) as context:
-                self.test_case.call_tool('test_tool')
+                self.client.call_tool('test_tool')
             
-            self.assertIn('MCP error', str(context.exception))
+            self.assertIn('MCP protocol error -32600', str(context.exception))
             self.assertIn('Invalid request', str(context.exception))
     
-    @patch('djangorestframework_mcp.test.json.loads')
-    def test_call_tool_with_execution_error(self, mock_json_loads):
-        """Test tool call with tool execution error."""
+    def test_call_tool_with_execution_error(self):
+        """Test tool call with tool execution error (should return as data)."""
         mock_response = Mock()
-        mock_json_loads.return_value = {
+        mock_response.content = json.dumps({
             'jsonrpc': '2.0',
             'result': {
                 'content': [
@@ -85,26 +89,30 @@ class TestMCPTestCase(unittest.TestCase):
                 'isError': True
             },
             'id': 1
-        }
+        }).encode()
         
-        with patch.object(self.test_case.mcp_client, 'post', return_value=mock_response):
-            with self.assertRaises(Exception) as context:
-                self.test_case.call_tool('test_tool')
+        # Set client as initialized and mock the post method
+        self.client._initialized = True
+        with patch.object(self.client, 'post', return_value=mock_response):
+            result = self.client.call_tool('test_tool')
             
-            self.assertIn('Tool execution error', str(context.exception))
-            self.assertIn('Tool execution failed', str(context.exception))
+            # Tool execution errors are returned as data, not raised
+            self.assertTrue(result.get('isError'))
+            self.assertEqual(result['content'][0]['text'], 'Tool execution failed')
     
     def test_call_tool_request_structure(self):
         """Test that call_tool creates proper JSON-RPC request."""
         mock_response = Mock()
         mock_response.content = json.dumps({
             'jsonrpc': '2.0',
-            'result': {'content': [{'type': 'text', 'text': '{}'}]},
+            'result': {'content': [{'type': 'text', 'text': '{}'}], 'structuredContent': {}},
             'id': 1
         }).encode()
         
-        with patch.object(self.test_case.mcp_client, 'post', return_value=mock_response) as mock_post:
-            self.test_case.call_tool('test_tool', {'param1': 'value1', 'param2': 42})
+        # Set client as initialized and mock the post method
+        self.client._initialized = True
+        with patch.object(self.client, 'post', return_value=mock_response) as mock_post:
+            self.client.call_tool('test_tool', {'param1': 'value1', 'param2': 42})
             
             # Verify the POST call
             mock_post.assert_called_once()
@@ -133,46 +141,33 @@ class TestMCPTestCase(unittest.TestCase):
         mock_response.content = json.dumps({
             'jsonrpc': '2.0',
             'result': {
-                'content': [{'type': 'text', 'text': '{}'}]
+                'content': [{'type': 'text', 'text': '{}'}],
+                'structuredContent': {}
             },
             'id': 1
         }).encode()
         
-        with patch.object(self.test_case.mcp_client, 'post', return_value=mock_response) as mock_post:
-            self.test_case.call_tool('test_tool')
+        # Set client as initialized and mock the post method
+        self.client._initialized = True
+        with patch.object(self.client, 'post', return_value=mock_response) as mock_post:
+            self.client.call_tool('test_tool')
             
             # Check that arguments is empty dict
             request_data = json.loads(mock_post.call_args[1]['data'])
             self.assertEqual(request_data['params']['arguments'], {})
     
-    def test_call_tool_non_json_response(self):
-        """Test call_tool with non-JSON response text."""
-        mock_response = Mock()
-        response_data = {
-            'jsonrpc': '2.0',
-            'result': {
-                'content': [
-                    {
-                        'type': 'text',
-                        'text': 'plain text response'  # Not JSON
-                    }
-                ]
-            },
-            'id': 1
-        }
-        mock_response.content = json.dumps(response_data).encode()
+    def test_call_tool_uninitialized(self):
+        """Test call_tool raises when client not initialized."""
+        # Client is not initialized
+        with self.assertRaises(RuntimeError) as context:
+            self.client.call_tool('test_tool')
         
-        with patch.object(self.test_case.mcp_client, 'post', return_value=mock_response):
-            result = self.test_case.call_tool('test_tool')
-            
-            # Should return text wrapped in dict
-            self.assertEqual(result, {'text': 'plain text response'})
+        self.assertIn('must complete initialization', str(context.exception))
     
-    @patch('djangorestframework_mcp.test.json.loads')
-    def test_list_tools_success(self, mock_json_loads):
+    def test_list_tools_success(self):
         """Test successful tools listing."""
         mock_response = Mock()
-        mock_json_loads.return_value = {
+        mock_response.content = json.dumps({
             'jsonrpc': '2.0',
             'result': {
                 'tools': [
@@ -189,11 +184,14 @@ class TestMCPTestCase(unittest.TestCase):
                 ]
             },
             'id': 1
-        }
+        }).encode()
         
-        with patch.object(self.test_case.mcp_client, 'post', return_value=mock_response):
-            tools = self.test_case.list_tools()
+        # Set client as initialized and mock the post method
+        self.client._initialized = True
+        with patch.object(self.client, 'post', return_value=mock_response):
+            result = self.client.list_tools()
             
+            tools = result['tools']
             self.assertEqual(len(tools), 2)
             self.assertEqual(tools[0]['name'], 'tool1')
             self.assertEqual(tools[1]['name'], 'tool2')
@@ -207,8 +205,10 @@ class TestMCPTestCase(unittest.TestCase):
             'id': 1
         }).encode()
         
-        with patch.object(self.test_case.mcp_client, 'post', return_value=mock_response) as mock_post:
-            self.test_case.list_tools()
+        # Set client as initialized and mock the post method
+        self.client._initialized = True
+        with patch.object(self.client, 'post', return_value=mock_response) as mock_post:
+            self.client.list_tools()
             
             # Verify the POST call
             mock_post.assert_called_once()
@@ -226,62 +226,77 @@ class TestMCPTestCase(unittest.TestCase):
             self.assertEqual(request_data['params'], {})
             self.assertEqual(request_data['id'], 1)
     
-    @patch('djangorestframework_mcp.test.json.loads')
-    def test_list_tools_with_error(self, mock_json_loads):
-        """Test list_tools with MCP error response."""
+    def test_list_tools_with_error(self):
+        """Test list_tools with MCP protocol error."""
         mock_response = Mock()
-        mock_json_loads.return_value = {
+        mock_response.content = json.dumps({
             'jsonrpc': '2.0',
             'error': {
                 'code': -32603,
                 'message': 'Internal error'
             },
             'id': 1
-        }
+        }).encode()
         
-        with patch.object(self.test_case.mcp_client, 'post', return_value=mock_response):
+        # Set client as initialized and mock the post method
+        self.client._initialized = True
+        with patch.object(self.client, 'post', return_value=mock_response):
             with self.assertRaises(Exception) as context:
-                self.test_case.list_tools()
+                self.client.list_tools()
             
-            self.assertIn('MCP error', str(context.exception))
+            self.assertIn('MCP protocol error -32603', str(context.exception))
             self.assertIn('Internal error', str(context.exception))
     
-    @patch('djangorestframework_mcp.test.json.loads')
-    def test_list_tools_empty_result(self, mock_json_loads):
-        """Test list_tools with empty tools result."""
-        mock_response = Mock()
-        mock_json_loads.return_value = {
+    def test_initialize_method(self):
+        """Test the initialize method."""
+        # Mock successful initialization responses
+        init_response = Mock()
+        init_response.content = json.dumps({
             'jsonrpc': '2.0',
-            'result': {},  # No 'tools' key
-            'id': 1
-        }
+            'result': {
+                'protocolVersion': '0.1.0',
+                'capabilities': {},
+                'serverInfo': {'name': 'test-server', 'version': '1.0.0'}
+            },
+            'id': 'init'
+        }).encode()
         
-        with patch.object(self.test_case.mcp_client, 'post', return_value=mock_response):
-            tools = self.test_case.list_tools()
+        notification_response = Mock()
+        notification_response.content = b''
+        
+        with patch.object(self.client, 'post', side_effect=[init_response, notification_response]) as mock_post:
+            result = self.client.initialize()
             
-            # Should return empty list when 'tools' key is missing
-            self.assertEqual(tools, [])
+            # Should be marked as initialized
+            self.assertTrue(self.client._initialized)
+            
+            # Should return the initialization result
+            self.assertEqual(result['protocolVersion'], '0.1.0')
+            
+            # Should have made two POST calls (init + notification)
+            self.assertEqual(mock_post.call_count, 2)
 
 
-class TestMCPTestCaseIntegration(unittest.TestCase):
-    """Integration tests for MCPTestCase."""
+class TestMCPClientIntegration(unittest.TestCase):
+    """Integration tests for MCPClient."""
     
     def test_inheritance(self):
-        """Test that MCPTestCase properly inherits from Django TestCase."""
-        self.assertTrue(issubclass(MCPTestCase, TestCase))
+        """Test that MCPClient properly inherits from Django Client."""
+        self.assertTrue(issubclass(MCPClient, Client))
     
     def test_docstring_and_methods(self):
-        """Test MCPTestCase has proper documentation and methods."""
-        self.assertIsNotNone(MCPTestCase.__doc__)
+        """Test MCPClient has proper documentation and methods."""
+        self.assertIsNotNone(MCPClient.__doc__)
         
         # Check required methods exist
-        self.assertTrue(hasattr(MCPTestCase, 'call_tool'))
-        self.assertTrue(hasattr(MCPTestCase, 'list_tools'))
-        self.assertTrue(hasattr(MCPTestCase, 'setUp'))
+        self.assertTrue(hasattr(MCPClient, 'call_tool'))
+        self.assertTrue(hasattr(MCPClient, 'list_tools'))
+        self.assertTrue(hasattr(MCPClient, 'initialize'))
         
         # Check methods are callable
-        self.assertTrue(callable(MCPTestCase.call_tool))
-        self.assertTrue(callable(MCPTestCase.list_tools))
+        self.assertTrue(callable(MCPClient.call_tool))
+        self.assertTrue(callable(MCPClient.list_tools))
+        self.assertTrue(callable(MCPClient.initialize))
 
 
 if __name__ == '__main__':

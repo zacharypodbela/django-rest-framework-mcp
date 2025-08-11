@@ -1,17 +1,20 @@
 """Integration tests for MCP functionality."""
 
 from django.test import TestCase, override_settings
-from djangorestframework_mcp.test import MCPTestCase
+from django.test import TestCase, override_settings
+from djangorestframework_mcp.test import MCPClient
 from .models import Customer
 
 
 @override_settings(ROOT_URLCONF='tests.urls')
-class MCPToolDiscoveryTests(MCPTestCase):
+class MCPToolDiscoveryTests(TestCase):
     """Test MCP tool discovery."""
     
     def test_list_tools(self):
         """Test that MCP tools are properly listed."""
-        tools = self.list_tools()
+        client = MCPClient()
+        result = client.list_tools()
+        tools = result['tools']
         
         # Check that we have tools
         self.assertGreater(len(tools), 0)
@@ -40,11 +43,13 @@ class MCPToolDiscoveryTests(MCPTestCase):
 
 
 @override_settings(ROOT_URLCONF='tests.urls')
-class MCPToolExecutionTests(MCPTestCase):
+class MCPToolExecutionTests(TestCase):
     """Test MCP tool execution."""
     
     def setUp(self):
         super().setUp()
+        # Initialize MCP client for all tests
+        self.client = MCPClient()
         # Create test data
         self.customer1 = Customer.objects.create(
             name="Alice Smith",
@@ -61,25 +66,35 @@ class MCPToolExecutionTests(MCPTestCase):
     
     def test_list_customers(self):
         """Test listing customers via MCP."""
-        result = self.call_tool('list_customers')
+        result = self.client.call_tool('list_customers')
         
-        self.assertIsInstance(result, list)
-        self.assertEqual(len(result), 2)
+        # Should not have errors
+        self.assertFalse(result.get('isError'))
+        
+        # Access structured content
+        data = result['structuredContent']
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 2)
         
         # Check customer data
-        emails = {c['email'] for c in result}
+        emails = {c['email'] for c in data}
         self.assertEqual(emails, {'alice@example.com', 'bob@example.com'})
     
     def test_retrieve_customer(self):
         """Test retrieving a specific customer via MCP."""
-        result = self.call_tool('retrieve_customers', {
+        result = self.client.call_tool('retrieve_customers', {
             'kwargs': {'pk': str(self.customer1.id)}
         })
         
-        self.assertEqual(result['name'], 'Alice Smith')
-        self.assertEqual(result['email'], 'alice@example.com')
-        self.assertEqual(result['age'], 30)
-        self.assertTrue(result['is_active'])
+        # Should not have errors
+        self.assertFalse(result.get('isError'))
+        
+        # Access structured content
+        data = result['structuredContent']
+        self.assertEqual(data['name'], 'Alice Smith')
+        self.assertEqual(data['email'], 'alice@example.com')
+        self.assertEqual(data['age'], 30)
+        self.assertTrue(data['is_active'])
     
     def test_create_customer(self):
         """Test creating a customer via MCP."""
@@ -92,11 +107,15 @@ class MCPToolExecutionTests(MCPTestCase):
             }
         }
         
-        result = self.call_tool('create_customers', data)
+        result = self.client.call_tool('create_customers', data)
         
-        # Check response
-        self.assertEqual(result['name'], 'Charlie Brown')
-        self.assertEqual(result['email'], 'charlie@example.com')
+        # Should not have errors
+        self.assertFalse(result.get('isError'))
+        
+        # Check response via structured content
+        data = result['structuredContent']
+        self.assertEqual(data['name'], 'Charlie Brown')
+        self.assertEqual(data['email'], 'charlie@example.com')
         
         # Verify in database
         customer = Customer.objects.get(email='charlie@example.com')
@@ -115,11 +134,15 @@ class MCPToolExecutionTests(MCPTestCase):
             }
         }
         
-        result = self.call_tool('update_customers', data)
+        result = self.client.call_tool('update_customers', data)
         
-        # Check response
-        self.assertEqual(result['name'], 'Alice Johnson')
-        self.assertEqual(result['email'], 'alice.johnson@example.com')
+        # Should not have errors
+        self.assertFalse(result.get('isError'))
+        
+        # Check response via structured content
+        data = result['structuredContent']
+        self.assertEqual(data['name'], 'Alice Johnson')
+        self.assertEqual(data['email'], 'alice.johnson@example.com')
         
         # Verify in database
         self.customer1.refresh_from_db()
@@ -136,12 +159,16 @@ class MCPToolExecutionTests(MCPTestCase):
             }
         }
         
-        result = self.call_tool('partial_update_customers', data)
+        result = self.client.call_tool('partial_update_customers', data)
         
-        # Check response - other fields unchanged
-        self.assertEqual(result['name'], 'Bob Jones')
-        self.assertEqual(result['email'], 'bob@example.com')
-        self.assertTrue(result['is_active'])
+        # Should not have errors
+        self.assertFalse(result.get('isError'))
+        
+        # Check response via structured content - other fields unchanged
+        data = result['structuredContent']
+        self.assertEqual(data['name'], 'Bob Jones')
+        self.assertEqual(data['email'], 'bob@example.com')
+        self.assertTrue(data['is_active'])
         
         # Verify in database
         self.customer2.refresh_from_db()
@@ -152,12 +179,16 @@ class MCPToolExecutionTests(MCPTestCase):
         """Test deleting a customer via MCP."""
         initial_count = Customer.objects.count()
         
-        result = self.call_tool('destroy_customers', {
+        result = self.client.call_tool('destroy_customers', {
             'kwargs': {'pk': str(self.customer1.id)}
         })
         
-        # Check response
-        self.assertIn('message', result)
+        # Should not have errors
+        self.assertFalse(result.get('isError'))
+        
+        # Check response via structured content
+        data = result['structuredContent']
+        self.assertIn('message', data)
         
         # Verify deletion
         self.assertEqual(Customer.objects.count(), initial_count - 1)
@@ -165,16 +196,18 @@ class MCPToolExecutionTests(MCPTestCase):
     
     def test_error_handling_not_found(self):
         """Test error handling for non-existent customer."""
-        with self.assertRaises(Exception) as context:
-            self.call_tool('retrieve_customers', {
-                'kwargs': {'pk': '99999'}
-            })
+        result = self.client.call_tool('retrieve_customers', {
+            'kwargs': {'pk': '99999'}
+        })
+        
+        # Should return an error response
+        self.assertTrue(result.get('isError'))
         
         # DRF returns "No Customer matches the given query"
-        error_msg = str(context.exception).lower()
+        error_text = result['content'][0]['text'].lower()
         self.assertTrue(
-            'not found' in error_msg or 'no customer matches' in error_msg,
-            f"Expected error message about not found, got: {error_msg}"
+            'not found' in error_text or 'no customer matches' in error_text,
+            f"Expected error message about not found, got: {error_text}"
         )
     
     def test_error_handling_validation(self):
@@ -188,14 +221,130 @@ class MCPToolExecutionTests(MCPTestCase):
             }
         }
         
-        with self.assertRaises(Exception) as context:
-            self.call_tool('create_customers', data)
+        result = self.client.call_tool('create_customers', data)
+        
+        # Should return an error response
+        self.assertTrue(result.get('isError'))
         
         # Check for validation-related error messages
-        error_msg = str(context.exception).lower()
+        error_text = result['content'][0]['text'].lower()
         self.assertTrue(
-            'validation' in error_msg or 'already exists' in error_msg or 'unique' in error_msg,
-            f"Expected error message about validation, got: {error_msg}"
+            'validation' in error_text or 'already exists' in error_text or 'unique' in error_text,
+            f"Expected error message about validation, got: {error_text}"
+        )
+
+
+@override_settings(ROOT_URLCONF='tests.urls')
+class MCPClientErrorHandlingTests(TestCase):
+    """Test that MCPClient properly handles errors without raising exceptions."""
+    
+    def test_client_returns_errors_without_raising(self):
+        """Test that error responses are returned, not raised as exceptions."""
+        client = MCPClient()
+        
+        # Test tool not found error
+        result = client.call_tool('nonexistent_tool')
+        self.assertTrue(result.get('isError'))
+        self.assertIn('Tool not found', result['content'][0]['text'])
+        
+        # Test validation error (missing required fields)
+        result = client.call_tool('create_customers', {'body': {}})
+        self.assertTrue(result.get('isError'))
+        error_text = result['content'][0]['text'].lower()
+        self.assertTrue('required' in error_text or 'field is required' in error_text)
+    
+    def test_client_raises_only_for_initialization_violations(self):
+        """Test that client only raises for protocol lifecycle violations."""
+        # Create client without auto-initialization
+        client = MCPClient(auto_initialize=False)
+        
+        # Should raise because not initialized
+        with self.assertRaises(RuntimeError) as context:
+            client.call_tool('list_customers')
+        
+        self.assertIn('must complete initialization', str(context.exception))
+        
+        # Same for list_tools
+        with self.assertRaises(RuntimeError) as context:
+            client.list_tools()
+        
+        self.assertIn('must complete initialization', str(context.exception))
+        
+        # After initialization, should work fine
+        client.initialize()
+        result = client.list_tools()
+        self.assertIsInstance(result['tools'], list)
+
+
+@override_settings(ROOT_URLCONF='tests.urls')
+class MCPLegacyContentTests(TestCase):
+    """Test legacy text content field (deprecated feature)."""
+    
+    def setUp(self):
+        super().setUp()
+        # Initialize MCP client for all tests
+        self.client = MCPClient()
+        # Create test data
+        self.customer = Customer.objects.create(
+            name="Test Customer",
+            email="test@example.com",
+            age=25,
+            is_active=True
+        )
+    
+    def test_text_content_matches_structured_content(self):
+        """Test that legacy text content matches structured content."""
+        result = self.client.call_tool('list_customers')
+        
+        # Should not have errors
+        self.assertFalse(result.get('isError'))
+        
+        # Both text and structured content should be present
+        self.assertIn('content', result)
+        self.assertIn('structuredContent', result)
+        
+        # Text content should be JSON representation of structured content
+        text_content = result['content'][0]['text']
+        structured_content = result['structuredContent']
+        
+        # Parse text content and compare
+        import json
+        parsed_text = json.loads(text_content)
+        self.assertEqual(parsed_text, structured_content)
+        
+    def test_text_content_for_single_object(self):
+        """Test text content format for single object responses."""
+        result = self.client.call_tool('retrieve_customers', {
+            'kwargs': {'pk': str(self.customer.id)}
+        })
+        
+        # Should not have errors
+        self.assertFalse(result.get('isError'))
+        
+        # Verify text content is valid JSON
+        text_content = result['content'][0]['text']
+        structured_content = result['structuredContent']
+        
+        import json
+        parsed_text = json.loads(text_content)
+        self.assertEqual(parsed_text, structured_content)
+        self.assertEqual(parsed_text['name'], 'Test Customer')
+        
+    def test_text_content_for_error_responses(self):
+        """Test that error responses have text content with error messages."""
+        result = self.client.call_tool('retrieve_customers', {
+            'kwargs': {'pk': '99999'}
+        })
+        
+        # Should have errors
+        self.assertTrue(result.get('isError'))
+        
+        # Error text should be present and meaningful
+        self.assertIn('content', result)
+        error_text = result['content'][0]['text']
+        self.assertTrue(
+            'not found' in error_text.lower() or 'no customer matches' in error_text.lower(),
+            f"Expected error message about not found, got: {error_text}"
         )
 
 
@@ -553,11 +702,13 @@ class MCPProtocolTests(TestCase):
 
 
 @override_settings(ROOT_URLCONF='tests.urls')
-class TestMCPRequestConditionalLogic(MCPTestCase):
+class TestMCPRequestConditionalLogic(TestCase):
     """Test conditional logic based on request.is_mcp_request."""
     
     def setUp(self):
         super().setUp()
+        # Initialize MCP client for all tests
+        self.client = MCPClient()
         from djangorestframework_mcp.registry import registry
         registry.clear()
         
@@ -594,9 +745,11 @@ class TestMCPRequestConditionalLogic(MCPTestCase):
                 return CustomerSerializer
         
         # Test MCP request - should only see active customers
-        result = self.call_tool('list_filteredcustomers')
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]['name'], 'Active Customer')
+        result = self.client.call_tool('list_filteredcustomers')
+        self.assertFalse(result.get('isError'))
+        data = result['structuredContent']
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['name'], 'Active Customer')
     
     def test_get_serializer_class_for_mcp_requests(self):
         """Test that ViewSets can use different serializers for MCP requests."""
@@ -621,10 +774,12 @@ class TestMCPRequestConditionalLogic(MCPTestCase):
                 return CustomerSerializer
         
         # Test MCP request - should get simplified data
-        result = self.call_tool('list_serializercustomers')
+        result = self.client.call_tool('list_serializercustomers')
+        self.assertFalse(result.get('isError'))
+        data = result['structuredContent']
         
         # Should have simplified fields only
-        for customer in result:
+        for customer in data:
             expected_fields = {'name', 'email'}
             actual_fields = set(customer.keys())
             # MCP responses may include additional fields like 'id'
@@ -668,18 +823,22 @@ class TestMCPRequestConditionalLogic(MCPTestCase):
                     })
         
         # Test MCP request
-        result = self.call_tool('get_stats_behavioralcustomers')
-        self.assertEqual(result['type'], 'mcp_stats')
-        self.assertIn('total_customers', result)
-        self.assertNotIn('active_customers', result)  # Simplified version
+        result = self.client.call_tool('get_stats_behavioralcustomers')
+        self.assertFalse(result.get('isError'))
+        data = result['structuredContent']
+        self.assertEqual(data['type'], 'mcp_stats')
+        self.assertIn('total_customers', data)
+        self.assertNotIn('active_customers', data)  # Simplified version
 
 
 @override_settings(ROOT_URLCONF='tests.urls')
-class TestViewSetInheritancePatterns(MCPTestCase):
+class TestViewSetInheritancePatterns(TestCase):
     """Test MCP integration with ViewSet inheritance patterns."""
     
     def setUp(self):
         super().setUp()
+        # Initialize MCP client for all tests
+        self.client = MCPClient()
         from djangorestframework_mcp.registry import registry
         registry.clear()
     
@@ -717,12 +876,14 @@ class TestViewSetInheritancePatterns(MCPTestCase):
             pass  # Inherits all behavior from BaseCustomerViewSet
         
         # Should work with inherited behavior
-        result = self.call_tool('list_inheritedcustomers')
+        result = self.client.call_tool('list_inheritedcustomers')
+        self.assertFalse(result.get('isError'))
+        data = result['structuredContent']
         
         # Should have inherited custom structure
-        self.assertIn('customers', result)
-        self.assertIn('count', result)
-        self.assertEqual(result['source'], 'inherited')
+        self.assertIn('customers', data)
+        self.assertIn('count', data)
+        self.assertEqual(data['source'], 'inherited')
     
     def test_multiple_inheritance_with_mixins(self):
         """Test MCP ViewSet with multiple inheritance and mixins."""
@@ -757,11 +918,13 @@ class TestViewSetInheritancePatterns(MCPTestCase):
                 return response
         
         # Test that it works with multiple inheritance
-        result = self.call_tool('list_mixincustomers')
+        result = self.client.call_tool('list_mixincustomers')
+        self.assertFalse(result.get('isError'))
+        data = result['structuredContent']
         
-        self.assertIn('customers', result)
-        self.assertIn('mixin_data', result)
-        self.assertEqual(result['mixin_data'], 'from_mixin')
+        self.assertIn('customers', data)
+        self.assertIn('mixin_data', data)
+        self.assertEqual(data['mixin_data'], 'from_mixin')
     
     def test_abstract_base_viewset_pattern(self):
         """Test abstract base ViewSet pattern with MCP."""
@@ -806,9 +969,11 @@ class TestViewSetInheritancePatterns(MCPTestCase):
                 return base_context
         
         # Test abstract base pattern works
-        result = self.call_tool('list_abstractcustomers')
+        result = self.client.call_tool('list_abstractcustomers')
+        self.assertFalse(result.get('isError'))
+        data = result['structuredContent']
         
-        self.assertIn('data', result)
-        self.assertIn('meta', result)
-        self.assertEqual(result['meta']['api_version'], '1.0')
-        self.assertTrue(result['meta']['concrete_viewset'])
+        self.assertIn('data', data)
+        self.assertIn('meta', data)
+        self.assertEqual(data['meta']['api_version'], '1.0')
+        self.assertTrue(data['meta']['concrete_viewset'])

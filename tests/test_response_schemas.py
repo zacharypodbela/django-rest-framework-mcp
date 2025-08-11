@@ -3,13 +3,11 @@ Test response schema consistency across all MCP operations.
 """
 
 import json
-from django.test import TestCase, Client, override_settings
+from django.test import TestCase, Client
 from unittest.mock import Mock, patch
 from djangorestframework_mcp.views import MCPView
 from djangorestframework_mcp.registry import registry
 from djangorestframework_mcp.types import MCPTool
-from djangorestframework_mcp.test import MCPTestCase
-from .models import Customer
 
 
 class ResponseSchemaConsistencyTests(TestCase):
@@ -236,126 +234,3 @@ class ResponseSchemaConsistencyTests(TestCase):
             self.assertEqual(data['id'], 5)
 
 
-@override_settings(ROOT_URLCONF='tests.urls')
-class StructuredContentTests(MCPTestCase):
-    """Test MCP-compliant structured content in tool responses."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        super().setUp()
-        # Register the CustomerViewSet for testing
-        from tests.views import CustomerViewSet
-        from djangorestframework_mcp.decorators import mcp_viewset
-        registry.clear()
-        mcp_viewset()(CustomerViewSet)
-    
-    def test_structured_content_in_tool_responses(self):
-        """Test that tool responses include both content and structuredContent per MCP spec."""
-        # Create test customer
-        customer = Customer.objects.create(
-            name="John Doe",
-            email="john@example.com",
-            age=30,
-            is_active=True
-        )
-        
-        # Call retrieve tool to get structured response
-        result = self.call_tool('retrieve_customers', {
-            'kwargs': {'pk': str(customer.id)}
-        })
-        
-        # Verify structured content is present and matches expected structure
-        self.assertIsInstance(result, dict)
-        self.assertIn('name', result)
-        self.assertIn('email', result)
-        self.assertIn('age', result)
-        self.assertEqual(result['name'], 'John Doe')
-        self.assertEqual(result['email'], 'john@example.com')
-        self.assertEqual(result['age'], 30)
-        
-        # Now test the raw MCP response structure
-        request_data = {
-            'jsonrpc': '2.0',
-            'method': 'tools/call',
-            'params': {
-                'name': 'retrieve_customers',
-                'arguments': {
-                    'kwargs': {'pk': str(customer.id)}
-                }
-            },
-            'id': 1
-        }
-        
-        response = self.client.post(
-            '/mcp/',
-            data=json.dumps(request_data),
-            content_type='application/json'
-        )
-        
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.content)
-        result_data = data['result']
-        
-        # Verify both content and structuredContent are present
-        self.assertIn('content', result_data)
-        self.assertIn('structuredContent', result_data)
-        
-        # Verify content array structure
-        content = result_data['content']
-        self.assertIsInstance(content, list)
-        self.assertEqual(len(content), 1)
-        self.assertEqual(content[0]['type'], 'text')
-        self.assertIn('text', content[0])
-        
-        # Verify structured content matches the actual data
-        structured = result_data['structuredContent']
-        self.assertIsInstance(structured, dict)
-        self.assertEqual(structured['name'], 'John Doe')
-        self.assertEqual(structured['email'], 'john@example.com')
-        self.assertEqual(structured['age'], 30)
-        
-        # Verify text content contains JSON representation
-        text_content = content[0]['text']
-        parsed_text = json.loads(text_content)
-        self.assertEqual(parsed_text, structured)  # Should be equivalent
-    
-    def test_structured_content_with_list_response(self):
-        """Test that list responses also include structuredContent."""
-        # Create test customers
-        Customer.objects.create(name="Alice", email="alice@example.com", age=25)
-        Customer.objects.create(name="Bob", email="bob@example.com", age=35)
-        
-        # Test the raw MCP response structure
-        request_data = {
-            'jsonrpc': '2.0',
-            'method': 'tools/call',
-            'params': {
-                'name': 'list_customers',
-                'arguments': {}
-            },
-            'id': 1
-        }
-        
-        response = self.client.post(
-            '/mcp/',
-            data=json.dumps(request_data),
-            content_type='application/json'
-        )
-        
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.content)
-        result_data = data['result']
-        
-        # Verify both content and structuredContent are present
-        self.assertIn('content', result_data)
-        self.assertIn('structuredContent', result_data)
-        
-        # Verify structured content is a list
-        structured = result_data['structuredContent']
-        self.assertIsInstance(structured, list)
-        self.assertEqual(len(structured), 2)
-        
-        # Verify text content contains JSON representation of the list
-        text_content = result_data['content'][0]['text']
-        parsed_text = json.loads(text_content)
-        self.assertEqual(parsed_text, structured)

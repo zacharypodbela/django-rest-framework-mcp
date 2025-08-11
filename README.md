@@ -219,20 +219,30 @@ class CustomerViewSet(viewsets.ModelViewSet):
 The library provides test utilities to verify your MCP tools work correctly:
 
 ```python
-from djangorestframework_mcp.test import MCPTestCase
+from django.test import TestCase
+from djangorestframework_mcp.test import MCPClient
 
-class CustomerMCPTests(MCPTestCase):
+class CustomerMCPTests(TestCase):
     def test_list_customers(self):
         # Create test data
         Customer.objects.create(name="Alice", email="alice@example.com")
         Customer.objects.create(name="Bob", email="bob@example.com")
 
-        # Call the MCP tool
-        result = self.call_tool("customers_list")
+        # Create MCP client and call tool
+        client = MCPClient()
+        result = client.call_tool("customers_list")
 
         # Assert the response
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(len(result['data']), 2)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 2)
+
+    def test_error_handling(self):
+        # Test validation errors
+        client = MCPClient()
+        result = client.call_tool("create_customers", {"body": {}})
+
+        self.assertTrue(result.get('isError'))
+        self.assertIn('Body is required', result['content'][0]['text'])
 ```
 
 ### Array Inputs
@@ -366,14 +376,21 @@ Check if the current request is coming from an MCP client.
 
 ### Test Utilities
 
-#### `MCPTestCase`
+#### `MCPClient`
 
-Base test case class for testing MCP tools. Provides methods that mimic an MCP Client.
+Test client for interacting with MCP servers in your tests. Extends `django.test.Client` to handle MCP protocol communication.
+
+**Parameters:**
+
+- `mcp_endpoint` (str, optional): The URL path to the MCP server endpoint. Defaults to 'mcp/' to match the library's default routing.
+- `auto_initialize` (bool, optional): Whether to automatically perform the MCP initialization handshake. Set to False if you need to test initialization behavior explicitly. Defaults to True.
+- `*args` / `**kwargs`: Additional arguments passed to Django's Client constructor (e.g., `HTTP_HOST`, `enforce_csrf_checks`, etc.).
 
 **Methods:**
 
-- `call_tool(tool_name, params=None)`: Call an MCP tool and return the result
-- `list_tools()`: List all available MCP tools
+- `call_tool(tool_name, arguments=None)`: Execute an MCP tool and return the result
+- `list_tools()`: Discover all available MCP tools from the server
+- `initialize()`: Perform MCP initialization handshake (done automatically unless `auto_initialize=False`)
 
 ## Contributing
 
