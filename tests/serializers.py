@@ -19,3 +19,40 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = '__all__'
+
+
+# Test serializers for list inputs and validation testing
+
+class SimpleItemSerializer(serializers.Serializer):
+    """Simple serializer for testing list inputs."""
+    name = serializers.CharField(max_length=100)
+    value = serializers.IntegerField()
+    is_active = serializers.BooleanField(default=True)
+
+
+class SimpleItemListSerializer(serializers.ListSerializer):
+    """List serializer for testing list inputs."""
+    child = SimpleItemSerializer()
+
+
+class StrictSerializer(serializers.Serializer):
+    """Strict serializer for testing validation errors."""
+    name = serializers.CharField(max_length=5, required=True)  # Very short for testing
+    value = serializers.IntegerField(min_value=0, required=True)
+
+
+class StrictListSerializer(serializers.ListSerializer):
+    """List serializer with strict validation."""
+    child = StrictSerializer()
+
+
+class NestedItemSerializer(serializers.Serializer):
+    """Nested serializer for testing nested structures."""
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+
+
+class ContainerSerializer(serializers.Serializer):
+    """Container serializer with nested lists."""
+    title = serializers.CharField()
+    items = NestedItemSerializer(many=True)

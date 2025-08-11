@@ -977,3 +977,164 @@ class TestViewSetInheritancePatterns(TestCase):
         self.assertIn('meta', data)
         self.assertEqual(data['meta']['api_version'], '1.0')
         self.assertTrue(data['meta']['concrete_viewset'])
+
+
+@override_settings(ROOT_URLCONF='tests.urls')
+class TestListSerializerIntegration(TestCase):
+    """Integration tests for list serializers with actual MCP tool execution."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        super().setUp()
+        # Initialize MCP client for all tests
+        self.client = MCPClient()
+        from djangorestframework_mcp.registry import registry
+        registry.clear()
+    
+    def test_viewset_with_mixed_single_and_list_endpoints(self):
+        """Test ViewSet with both single item and list endpoints."""
+        from .serializers import SimpleItemSerializer, SimpleItemListSerializer
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        
+        @mcp_viewset()
+        class ItemViewSet(viewsets.GenericViewSet):
+            @mcp_tool(input_serializer=SimpleItemSerializer)
+            @action(detail=False, methods=['post'])
+            def create_single(self, request):
+                return Response({
+                    'message': 'Single item created',
+                    'item': request.data
+                })
+            
+            @mcp_tool(input_serializer=SimpleItemListSerializer)
+            @action(detail=False, methods=['post'])
+            def create_bulk(self, request):
+                return Response({
+                    'message': f'Bulk created {len(request.data)} items',
+                    'items': request.data
+                })
+        
+        # Test single item endpoint
+        single_result = self.client.call_tool('create_single_item', {
+            'body': {
+                'name': 'Test Item',
+                'value': 42,
+                'is_active': True
+            }
+        })
+        
+        self.assertFalse(single_result.get('isError'))
+        structured_data = single_result['structuredContent']
+        self.assertEqual(structured_data['message'], 'Single item created')
+        self.assertEqual(structured_data['item']['name'], 'Test Item')
+        
+        # Test bulk endpoint
+        bulk_result = self.client.call_tool('create_bulk_item', {
+            'body': [
+                {'name': 'Item 1', 'value': 10, 'is_active': True},
+                {'name': 'Item 2', 'value': 20, 'is_active': False},
+                {'name': 'Item 3', 'value': 30, 'is_active': True}
+            ]
+        })
+        
+        self.assertFalse(bulk_result.get('isError'))
+        structured_data = bulk_result['structuredContent']
+        self.assertEqual(structured_data['message'], 'Bulk created 3 items')
+        self.assertEqual(len(structured_data['items']), 3)
+        self.assertEqual(structured_data['items'][0]['name'], 'Item 1')
+        self.assertEqual(structured_data['items'][1]['value'], 20)
+    
+    def test_list_endpoint_tool_schema_in_tools_list(self):
+        """Test that list endpoints show correct schema in tools list."""
+        from .serializers import SimpleItemListSerializer
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        
+        @mcp_viewset()
+        class BulkViewSet(viewsets.GenericViewSet):
+            @mcp_tool(input_serializer=SimpleItemListSerializer)
+            @action(detail=False, methods=['post'])
+            def bulk_operation(self, request):
+                return Response({'processed': len(request.data)})
+        
+        # List all tools and find our bulk operation
+        tools_result = self.client.list_tools()
+        tools_list = tools_result['tools']
+        bulk_tool = next(t for t in tools_list if t['name'] == 'bulk_operation_bulk')
+        
+        # Check the input schema
+        input_schema = bulk_tool['inputSchema']
+        self.assertIn('body', input_schema['properties'])
+        
+        body_schema = input_schema['properties']['body']
+        self.assertEqual(body_schema['type'], 'array')
+        self.assertIn('items', body_schema)
+        
+        # Items should have the expected object structure
+        item_schema = body_schema['items']
+        self.assertEqual(item_schema['type'], 'object')
+        self.assertIn('name', item_schema['properties'])
+        self.assertIn('value', item_schema['properties'])
+        self.assertIn('is_active', item_schema['properties'])
+    
+    def test_empty_list_input(self):
+        """Test that empty list input works correctly."""
+        from .serializers import SimpleItemListSerializer
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        
+        @mcp_viewset()
+        class EmptyTestViewSet(viewsets.GenericViewSet):
+            @mcp_tool(input_serializer=SimpleItemListSerializer)
+            @action(detail=False, methods=['post'])
+            def process_items(self, request):
+                return Response({'count': len(request.data)})
+        
+        # Test with empty list
+        result = self.client.call_tool('process_items_emptytest', {
+            'body': []
+        })
+        
+        self.assertFalse(result.get('isError'))
+        structured_data = result['structuredContent']
+        self.assertEqual(structured_data['count'], 0)
+    
+    def test_list_input_with_validation_errors(self):
+        """Test that validation errors work correctly with list inputs."""
+        from .serializers import StrictListSerializer, StrictSerializer
+        from rest_framework import viewsets, status
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        
+        @mcp_viewset()
+        class ValidationViewSet(viewsets.GenericViewSet):
+            @mcp_tool(input_serializer=StrictListSerializer)
+            @action(detail=False, methods=['post'])
+            def validate_items(self, request):
+                serializer = StrictSerializer(data=request.data, many=True)
+                if serializer.is_valid():
+                    return Response({'valid': True, 'data': serializer.data})
+                else:
+                    return Response({'valid': False, 'errors': serializer.errors}, 
+                                  status=status.HTTP_400_BAD_REQUEST)
+        
+        # Test with invalid data (name too long, negative value)
+        result = self.client.call_tool('validate_items_validation', {
+            'body': [
+                {'name': 'ValidName', 'value': 10},
+                {'name': 'TooLongName', 'value': -5}  # Invalid data
+            ]
+        })
+        
+        # Should get a validation error
+        self.assertTrue(result.get('isError'))
+        error_text = result['content'][0]['text']
+        self.assertIn('ViewSet returned error', error_text)

@@ -7,9 +7,11 @@ from rest_framework.viewsets import ModelViewSet
 from djangorestframework_mcp.schema import (
     field_to_json_schema,
     get_serializer_schema,
-    generate_tool_schema
+    generate_tool_schema,
+    generate_body_schema
 )
 from djangorestframework_mcp.types import MCPTool
+from djangorestframework_mcp.registry import registry
 
 
 class TestFieldToJsonSchema(unittest.TestCase):
@@ -681,6 +683,155 @@ class TestReadOnlyFieldHandling(unittest.TestCase):
         # Required fields should include the required ones
         self.assertIn('name', schema['required'])
         self.assertIn('value', schema['required'])
+
+
+class TestListSerializerSchemaGeneration(unittest.TestCase):
+    """Test schema generation for list serializers."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        registry.clear()
+    
+    def test_generate_schema_from_single_serializer_class(self):
+        """Test schema generation from a regular serializer class."""
+        from .serializers import SimpleItemSerializer
+        
+        schema = get_serializer_schema(SimpleItemSerializer())
+        
+        self.assertEqual(schema['type'], 'object')
+        self.assertIn('properties', schema)
+        self.assertIn('name', schema['properties'])
+        self.assertIn('value', schema['properties'])
+        self.assertIn('is_active', schema['properties'])
+        
+        # Check field types
+        self.assertEqual(schema['properties']['name']['type'], 'string')
+        self.assertEqual(schema['properties']['value']['type'], 'integer')
+        self.assertEqual(schema['properties']['is_active']['type'], 'boolean')
+    
+    def test_generate_schema_from_list_serializer_listserializer_subclass(self):
+        """Test schema generation from ListSerializer subclass."""
+        from .serializers import SimpleItemListSerializer
+        from rest_framework import viewsets
+        from djangorestframework_mcp.decorators import mcp_viewset
+        from djangorestframework_mcp.types import MCPTool
+        
+        # Create a tool with a ListSerializer to test list schema generation
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            pass
+        
+        tool = MCPTool(
+            name='test_tool',
+            viewset_class=TestViewSet,
+            action='create'
+        )
+        tool.input_serializer = SimpleItemListSerializer
+        
+        body_info = generate_body_schema(tool)
+        schema = body_info['schema']
+        
+        # Should be a list schema (JSON Schema type 'array')
+        self.assertEqual(schema['type'], 'array')
+        self.assertIn('items', schema)
+        
+        # Items should have the structure of SimpleItemSerializer
+        item_schema = schema['items']
+        self.assertEqual(item_schema['type'], 'object')
+        self.assertIn('properties', item_schema)
+        self.assertIn('name', item_schema['properties'])
+        self.assertIn('value', item_schema['properties'])
+        self.assertIn('is_active', item_schema['properties'])
+    
+    def test_generate_body_schema_with_list_input_serializer(self):
+        """Test generate_body_schema with list input serializer."""
+        from .serializers import SimpleItemListSerializer
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            @mcp_tool(input_serializer=SimpleItemListSerializer)
+            @action(detail=False, methods=['post'])
+            def bulk_create(self, request):
+                return Response({'created': len(request.data)})
+        
+        # Get the registered tool
+        tools = registry.get_all_tools()
+        bulk_create_tool = next(t for t in tools if t.action == 'bulk_create')
+        
+        # Generate body schema
+        body_info = generate_body_schema(bulk_create_tool)
+        
+        # Should have list schema (JSON Schema type 'array')
+        self.assertIsNotNone(body_info['schema'])
+        self.assertEqual(body_info['schema']['type'], 'array')
+        self.assertIn('items', body_info['schema'])
+        
+        # Items should be objects with our expected properties
+        item_schema = body_info['schema']['items']
+        self.assertEqual(item_schema['type'], 'object')
+        self.assertIn('name', item_schema['properties'])
+        self.assertIn('value', item_schema['properties'])
+    
+    def test_generate_body_schema_with_single_input_serializer(self):
+        """Test generate_body_schema with single input serializer (for comparison)."""
+        from .serializers import SimpleItemSerializer
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            @mcp_tool(input_serializer=SimpleItemSerializer)
+            @action(detail=False, methods=['post'])
+            def single_create(self, request):
+                return Response({'created': 1})
+        
+        # Get the registered tool
+        tools = registry.get_all_tools()
+        single_create_tool = next(t for t in tools if t.action == 'single_create')
+        
+        # Generate body schema
+        body_info = generate_body_schema(single_create_tool)
+        
+        # Should have object schema
+        self.assertIsNotNone(body_info['schema'])
+        self.assertEqual(body_info['schema']['type'], 'object')
+        self.assertIn('properties', body_info['schema'])
+        self.assertIn('name', body_info['schema']['properties'])
+
+
+class TestNestedListSerializers(unittest.TestCase):
+    """Test list serializers with nested structures."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        registry.clear()
+    
+    def test_nested_serializer_with_list(self):
+        """Test serializer with nested lists."""
+        from .serializers import ContainerSerializer
+        
+        schema = get_serializer_schema(ContainerSerializer())
+        
+        self.assertEqual(schema['type'], 'object')
+        self.assertIn('title', schema['properties'])
+        self.assertIn('items', schema['properties'])
+        
+        # Items should be a list (JSON Schema type 'array')
+        items_schema = schema['properties']['items']
+        self.assertEqual(items_schema['type'], 'array')
+        self.assertIn('items', items_schema)
+        
+        # List items should be objects with id and name
+        item_schema = items_schema['items']
+        self.assertEqual(item_schema['type'], 'object')
+        self.assertIn('id', item_schema['properties'])
+        self.assertIn('name', item_schema['properties'])
 
 
 if __name__ == '__main__':

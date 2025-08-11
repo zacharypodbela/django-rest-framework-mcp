@@ -703,5 +703,51 @@ class TestEdgeCaseViewSets(unittest.TestCase):
         self.assertIn('process_customonly', tool_names)
 
 
+class TestInstanceRejection(unittest.TestCase):
+    """Test that serializer instances are properly rejected with helpful errors."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        registry.clear()
+    
+    def test_decorator_rejects_serializer_instance(self):
+        """Test that @mcp_tool decorator rejects serializer instances."""
+        from .serializers import SimpleItemSerializer
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        
+        with self.assertRaises(ValueError) as context:
+            @mcp_viewset()
+            class TestViewSet(viewsets.GenericViewSet):
+                @mcp_tool(input_serializer=SimpleItemSerializer())  # Instance, not class
+                @action(detail=False, methods=['post'])
+                def bad_action(self, request):
+                    return Response({})
+        
+        error_msg = str(context.exception)
+        self.assertIn("must be a serializer class, not an instance", error_msg)
+    
+    def test_decorator_rejects_many_true_instance(self):
+        """Test that @mcp_tool decorator rejects many=True instances."""
+        from .serializers import SimpleItemSerializer
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        
+        with self.assertRaises(ValueError) as context:
+            @mcp_viewset()
+            class TestViewSet(viewsets.GenericViewSet):
+                @mcp_tool(input_serializer=SimpleItemSerializer(many=True))  # Instance, not class
+                @action(detail=False, methods=['post'])
+                def bad_action(self, request):
+                    return Response({})
+        
+        error_msg = str(context.exception)
+        self.assertIn("must be a serializer class, not an instance", error_msg)
+
+
 if __name__ == '__main__':
     unittest.main()
