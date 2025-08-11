@@ -1,5 +1,8 @@
 # Django REST Framework MCP
 
+[![PyPI version](https://badge.fury.io/py/django-rest-framework-mcp.svg)](https://badge.fury.io/py/django-rest-framework-mcp)
+[![Python versions](https://img.shields.io/pypi/pyversions/django-rest-framework-mcp.svg)](https://pypi.org/project/django-rest-framework-mcp/)
+
 > ⚠️ **Alpha Release**: This library is in early alpha stage. APIs may change and there may be bugs. Use with caution in production environments. We welcome feedback and contributions!
 
 `django-rest-framework-mcp` allows you to quickly build MCP servers that expose your Django Rest Framework APIs as tools for LLMs and agentic applications to work with.
