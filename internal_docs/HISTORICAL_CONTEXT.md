@@ -107,3 +107,73 @@ We decided to extend the existing @mcp_tool decorator to accept a serializer par
 - Integrates cleanly with existing decorator architecture
 - Only the developer knows what their business logic actually needs - we can't guess it from static analysis of serializer definitions alone.
 - We need a full Serializer class as opposed to just a dictionary representing the schema b/c the dictionaries don't provide enough context to fill out the description, format, etc. which is essential for good LLM performance.
+
+# Q: Why do MCP tool input schemas have top-level keys like 'body' and 'kwargs'?
+
+## The Problem: Multiple Input Sources in DRF ViewSets
+
+Django REST Framework ViewSet actions can receive data from multiple sources:
+
+- **Request body** (`request.data`) - JSON payload data
+- **URL path parameters** (`kwargs`) - Like `pk` for detail views, `lookup_field` values
+- **Query parameters** (`request.query_params`) - URL query string parameters [future]
+- **Headers** (`request.headers`) - HTTP headers [future]
+
+Each source serves a different purpose and gets passed to ViewSet methods differently.
+
+## Our Architectural Decision: Explicit Top-Level Keys
+
+We structured MCP tool input schemas with explicit top-level keys that map directly to these input sources:
+
+```json
+{
+  "body": {
+    "customer_name": "John Doe",
+    "email": "john@example.com"
+  },
+  "kwargs": {
+    "pk": "123"
+  }
+}
+```
+
+**Key Mapping:**
+
+- `body` → `request.data` (request body/payload)
+- `kwargs` → direct parameters to ViewSet action methods
+- `query_params` → `request.query_params` [planned future feature]
+- `headers` → `request.headers` [planned future feature]
+
+## Why This Design?
+
+**Simplicity.** Each input source can have its own logic for generating schemas, and when a request comes in it's dead simple to unpack the values and pass them to ViewSets correctly.
+
+With explicit top-level keys, the request handling becomes straightforward:
+
+```python
+# Clean unpacking
+body_data = mcp_request.get('body', {})
+kwargs_data = mcp_request.get('kwargs', {})
+
+# Direct assignment
+request.data = body_data
+viewset_action(request, **kwargs_data)
+```
+
+## Alternative Considered: Flat Schema
+
+We considered a flat schema where all parameters are at the top level:
+
+```json
+{
+  "customer_name": "John Doe", // body
+  "email": "john@example.com", // body
+  "pk": "123" // kwargs
+}
+```
+
+**Rejected because:**
+
+- Have to leverage the functions that generated the schema to understand which parameters go where
+- Parameter name conflicts between sources
+- Less maintainable as input sources grow
