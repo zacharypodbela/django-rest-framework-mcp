@@ -375,11 +375,12 @@ class TestGenerateToolSchema(unittest.TestCase):
         # Should have kwargs and body
         self.assertEqual(set(input_schema['properties'].keys()), {'kwargs', 'body'})
         
-        # Check kwargs has pk and partial
+        # Check kwargs has only pk (no partial parameter)
         kwargs_schema = input_schema['properties']['kwargs']
         self.assertIn('pk', kwargs_schema['properties'])
-        self.assertIn('partial', kwargs_schema['properties'])
-        self.assertEqual(kwargs_schema['properties']['partial']['default'], True)
+        self.assertNotIn('partial', kwargs_schema['properties'])
+        
+        # Only pk should be required
         self.assertEqual(kwargs_schema['required'], ['pk'])
         
         # Check body has serializer fields
@@ -1058,8 +1059,8 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         pk_property = kwargs_info['schema']['properties']['pk']
         self.assertEqual(pk_property['description'], 'The id of the resource')
     
-    def test_partial_update_still_includes_partial_flag(self):
-        """Test that partial_update still includes the partial=True flag along with lookup."""
+    def test_partial_update_only_includes_lookup_field(self):
+        """Test that partial_update only includes lookup field, not partial kwarg."""
         from rest_framework import viewsets
         from .serializers import CustomerSerializer
         from .models import Customer
@@ -1077,19 +1078,16 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         # Generate kwargs schema
         kwargs_info = generate_kwargs_schema(partial_update_tool)
         
-        # Should have both slug and partial parameters
+        # Should only have slug parameter, not partial
         self.assertIsNotNone(kwargs_info['schema'])
         self.assertTrue(kwargs_info['is_required'])
         
         properties = kwargs_info['schema']['properties']
         self.assertIn('slug', properties)
-        self.assertIn('partial', properties)
+        self.assertNotIn('partial', properties)
         
-        # Only slug should be required (partial has default)
+        # Only slug should be required
         self.assertEqual(kwargs_info['schema']['required'], ['slug'])
-        
-        # Partial should have default value
-        self.assertTrue(properties['partial']['default'])
     
 
 

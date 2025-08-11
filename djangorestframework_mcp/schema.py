@@ -318,15 +318,7 @@ def generate_kwargs_schema(tool: MCPTool) -> Dict[str, Any]:
         }
         kwargs_required.append(lookup_url_kwarg)
     
-    if action == 'partial_update':
-        # partial_update also needs partial=True in kwargs
-        kwargs_properties['partial'] = {
-            'type': 'boolean',
-            'description': 'Whether this is a partial update',
-            'default': True
-        }
-    
-    # Build the kwargs schema if we have any properties
+    # Build the kwargs schema if we have any properties.
     if kwargs_properties:
         return {
             'schema': {
