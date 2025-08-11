@@ -5,8 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from djangorestframework_mcp.decorators import mcp_tool, mcp_viewset
 
-from blog.models import Post
-from blog.serializers import BulkPostSerializer, CreatePostSerializer, PostSerializer
+from blog.models import Post, Customer, Order
+from blog.serializers import BulkPostSerializer, CreatePostSerializer, PostSerializer, CustomerSerializer, OrderSerializer
 
 # DEMO: Tools are created for all CRUD actions on ModelViewSet
 @mcp_viewset()
@@ -63,3 +63,35 @@ class PostViewSet(viewsets.ModelViewSet):
     
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
+
+# DEMO: Selective action registration with custom basename
+@mcp_viewset(
+    basename='customer_mgmt',
+    actions=['list', 'retrieve', 'deactivate']
+)
+class CustomerViewSet(viewsets.ModelViewSet):
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer
+
+    # DEMO: Custom action for deactivating customers (business logic that's safe for MCP)
+    @mcp_tool(
+        name='deactivate_customer',
+        title='Deactivate Customer',
+        description='Deactivates a customer account by setting is_active to False',
+        input_serializer=None
+    )
+    @action(detail=True, methods=['post'])
+    def deactivate(self, request, pk=None):
+        customer = self.get_object()
+        customer.is_active = False
+        customer.save()
+        return Response({
+            'message': f'Customer {customer.name} has been deactivated',
+            'customer': CustomerSerializer(customer).data
+        })
+
+# DEMO: Nested serializers and required/optional field inference
+@mcp_viewset(actions=['create', 'list', 'retrieve'])
+class OrderViewSet(viewsets.ModelViewSet):
+    queryset = Order.objects.all().prefetch_related('items')
+    serializer_class = OrderSerializer

@@ -88,6 +88,8 @@ Follow these instructions to use `mcp-remote` to connect to Claude Desktop:
 
 3. Restart Claude Desktop and test your tools
 
+**Development Tip:** LLMs can be surprisingly effective at “manually” testing your MCP tools and uncovering bugs. In Claude Desktop, try a prompt like: _"I'm developing a new set of MCP tools locally. Please extensively test them — including coming up with complex edge cases to try - and look for unexpected behavior or bugs. Make at least 30 tool calls."_
+
 ## Advanced Configuration
 
 ### Custom Actions
