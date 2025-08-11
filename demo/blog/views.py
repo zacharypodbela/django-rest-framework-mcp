@@ -31,7 +31,7 @@ class PostViewSet(viewsets.ModelViewSet):
             # Append text to the end of the content noting it was created via MCP
             request.data['content'] += "\n\n*Created via MCP*"
 
-        if request.data.pop('add_created_on_footer'):
+        if request.data.pop('add_created_on_footer', False):
             request.data['content'] += f"\n\n*Created on {timezone.now().date()}*"
 
         return super().create(request, *args, **kwargs)
@@ -42,7 +42,7 @@ class PostViewSet(viewsets.ModelViewSet):
         input_serializer=None
     )
     @action(detail=True, methods=['post'])
-    def reverse(self, request):
+    def reverse(self, request, *args, **kwargs):
         post = self.get_object()
         post.title = post.title[::-1]
         post.content = post.content[::-1]
