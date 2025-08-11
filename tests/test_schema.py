@@ -66,7 +66,7 @@ class TestFieldToJsonSchema(unittest.TestCase):
         
         self.assertEqual(schema['type'], 'string')
         self.assertEqual(schema['format'], 'date-time')
-        self.assertIn('DateTime in format: iso-8601', schema['description'])
+        self.assertIn('DateTime in format: ISO-8601', schema['description'])
     
     def test_date_field(self):
         """Test DateField conversion."""
@@ -75,7 +75,7 @@ class TestFieldToJsonSchema(unittest.TestCase):
         
         self.assertEqual(schema['type'], 'string')
         self.assertEqual(schema['format'], 'date')
-        self.assertIn('Date in format: iso-8601', schema['description'])
+        self.assertIn('Date in format: ISO-8601', schema['description'])
     
     def test_time_field(self):
         """Test TimeField conversion - adds format info to description since MCP has no time format."""
@@ -83,7 +83,7 @@ class TestFieldToJsonSchema(unittest.TestCase):
         schema = field_to_json_schema(field)
         
         self.assertEqual(schema['type'], 'string')
-        self.assertIn('Time in format: iso-8601', schema['description'])
+        self.assertIn('Time in format: ISO-8601', schema['description'])
         self.assertNotIn('format', schema)  # MCP doesn't have a 'time' format
     
     def test_uuid_field(self):
@@ -180,7 +180,7 @@ class TestFieldToJsonSchema(unittest.TestCase):
         
         self.assertEqual(schema['type'], 'string')
         self.assertEqual(schema['format'], 'date-time')  # Always set MCP format
-        self.assertEqual(schema['description'], 'DateTime in format: iso-8601')
+        self.assertEqual(schema['description'], 'DateTime in format: ISO-8601')
     
     def test_date_field_custom_format(self):
         """Test date field with custom format shows ISO-8601 in description (what DRF actually accepts)."""
@@ -189,7 +189,7 @@ class TestFieldToJsonSchema(unittest.TestCase):
         
         self.assertEqual(schema['type'], 'string')
         self.assertEqual(schema['format'], 'date')  # Always set MCP format
-        self.assertEqual(schema['description'], 'Date in format: iso-8601')
+        self.assertEqual(schema['description'], 'Date in format: ISO-8601')
     
     def test_field_with_help_text_and_format_description(self):
         """Test field combines help_text with format description."""
@@ -201,8 +201,8 @@ class TestFieldToJsonSchema(unittest.TestCase):
         
         # Should combine help_text and format description (ISO-8601 since that's what DRF accepts)
         self.assertIn('When the event occurred', schema['description'])
-        self.assertIn('DateTime in format: iso-8601', schema['description'])
-        self.assertEqual(schema['description'], 'When the event occurred. DateTime in format: iso-8601')
+        self.assertIn('DateTime in format: ISO-8601', schema['description'])
+        self.assertEqual(schema['description'], 'When the event occurred. DateTime in format: ISO-8601')
 
 
 class TestSerializerToJsonSchema(unittest.TestCase):
@@ -503,17 +503,17 @@ class TestCustomDateTimeFormats(unittest.TestCase):
         start_schema = schema['properties']['start_time']
         self.assertEqual(start_schema['type'], 'string')
         self.assertEqual(start_schema['format'], 'date-time')
-        self.assertEqual(start_schema['description'], 'DateTime in format: iso-8601')
+        self.assertEqual(start_schema['description'], 'DateTime in format: ISO-8601')
         
         end_schema = schema['properties']['end_time']
         self.assertEqual(end_schema['type'], 'string')
         self.assertEqual(end_schema['format'], 'date-time')
-        self.assertEqual(end_schema['description'], 'DateTime in format: iso-8601')
+        self.assertEqual(end_schema['description'], 'DateTime in format: ISO-8601')
         
         date_schema = schema['properties']['event_date']
         self.assertEqual(date_schema['type'], 'string')
         self.assertEqual(date_schema['format'], 'date')
-        self.assertEqual(date_schema['description'], 'Date in format: iso-8601')
+        self.assertEqual(date_schema['description'], 'Date in format: ISO-8601')
 
 
 class TestComplexNestedStructures(unittest.TestCase):
