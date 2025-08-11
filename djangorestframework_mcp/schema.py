@@ -296,7 +296,7 @@ def generate_kwargs_schema(tool: MCPTool) -> Dict[str, Any]:
         # Get lookup_url_kwarg (defaults to lookup_field if not explicitly set)
         lookup_url_kwarg = getattr(instance, 'lookup_url_kwarg') or lookup_field
 
-        # If the lookup_field is "pk", fetch the actual field name for us to share with the LLM in the description
+        # If the lookup_field is "pk", fetch the actual field name to share with the LLM in the description
         lookup_field_name = lookup_field
         if lookup_field == 'pk':
             # Try to get the actual primary key field name from the model
@@ -310,11 +310,17 @@ def generate_kwargs_schema(tool: MCPTool) -> Dict[str, Any]:
                 # (like requiring get_queryset be implemented) if we find that this degrades LLM ability to use detail tools 
                 # to the point that the tools are not really usable
                 lookup_field_name = 'primary key'
-        
+        # Attempt to fetch the name of the resource (if possible) to further improve description
+        resource_name = 'resource'
+        try:
+            resource_name = viewset_class.queryset.model._meta.object_name.lower()
+        except:
+            pass
+
         # Add the lookup parameter
         kwargs_properties[lookup_url_kwarg] = {
             'type': 'string',
-            'description': f'The {lookup_field_name} of the resource' # TODO: Get the name of the resource
+            'description': f'The {lookup_field_name} of the {resource_name}'
         }
         kwargs_required.append(lookup_url_kwarg)
     

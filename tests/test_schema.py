@@ -875,7 +875,7 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         # Check description
         slug_property = kwargs_info['schema']['properties']['slug']
         self.assertEqual(slug_property['type'], 'string')
-        self.assertEqual(slug_property['description'], 'The slug of the resource')
+        self.assertEqual(slug_property['description'], 'The slug of the customer')
     
     def test_custom_lookup_url_kwarg(self):
         """Test ViewSet with custom lookup_url_kwarg."""
@@ -905,7 +905,7 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         
         # Description should show 'id' since lookup_field is 'pk' and actual field is 'id'
         customer_id_property = kwargs_info['schema']['properties']['customer_id']
-        self.assertEqual(customer_id_property['description'], 'The id of the resource')
+        self.assertEqual(customer_id_property['description'], 'The id of the customer')
     
     def test_custom_action_with_detail_true(self):
         """Test custom action with detail=True requires lookup parameter."""
@@ -940,7 +940,7 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         
         # Check that pk description shows actual primary key field name
         pk_property = kwargs_info['schema']['properties']['pk']
-        self.assertEqual(pk_property['description'], 'The id of the resource')
+        self.assertEqual(pk_property['description'], 'The id of the customer')
     
     def test_custom_action_with_detail_false(self):
         """Test custom action with detail=False does not require lookup parameter."""
@@ -1007,7 +1007,7 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         
         # Check description for uuid field
         uuid_property = kwargs_info['schema']['properties']['user_uuid']
-        self.assertEqual(uuid_property['description'], 'The uuid of the resource')
+        self.assertEqual(uuid_property['description'], 'The uuid of the customer')
     
     
     def test_pk_description_fallback(self):
@@ -1032,7 +1032,7 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         # Generate kwargs schema
         kwargs_info = generate_kwargs_schema(tool)
         
-        # Should fall back to 'primary key' when model can't be determined
+        # Should fall back to 'primary key' and 'resource' when model can't be determined
         pk_property = kwargs_info['schema']['properties']['pk']
         self.assertEqual(pk_property['description'], 'The primary key of the resource')
     
@@ -1057,7 +1057,7 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         
         # Should show the actual primary key field name (id) in description
         pk_property = kwargs_info['schema']['properties']['pk']
-        self.assertEqual(pk_property['description'], 'The id of the resource')
+        self.assertEqual(pk_property['description'], 'The id of the customer')
     
     def test_partial_update_only_includes_lookup_field(self):
         """Test that partial_update only includes lookup field, not partial kwarg."""
@@ -1088,6 +1088,10 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         
         # Only slug should be required
         self.assertEqual(kwargs_info['schema']['required'], ['slug'])
+        
+        # Check resource name in description
+        slug_property = kwargs_info['schema']['properties']['slug']
+        self.assertEqual(slug_property['description'], 'The slug of the customer')
     
 
 

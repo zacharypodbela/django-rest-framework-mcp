@@ -52,12 +52,47 @@ class TestMCPRegistry(unittest.TestCase):
         self.assertEqual(len(tools), 6)  # list, retrieve, create, update, partial_update, destroy
         
         tool_names = [t.name for t in tools]
-        self.assertIn('list_mockmodels', tool_names)
-        self.assertIn('retrieve_mockmodels', tool_names)
-        self.assertIn('create_mockmodels', tool_names)
-        self.assertIn('update_mockmodels', tool_names)
-        self.assertIn('partial_update_mockmodels', tool_names)
-        self.assertIn('destroy_mockmodels', tool_names)
+        self.assertIn('list_mock', tool_names)
+        self.assertIn('retrieve_mock', tool_names)
+        self.assertIn('create_mock', tool_names)
+        self.assertIn('update_mock', tool_names)
+        self.assertIn('partial_update_mock', tool_names)
+        self.assertIn('destroy_mock', tool_names)
+    
+    def test_register_viewset_with_real_model_name(self):
+        """Test registering a ViewSet with a real model generates proper base name."""
+        from .models import Customer
+        from rest_framework import viewsets
+        
+        class CustomerViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            
+            def list(self):
+                pass
+            def retrieve(self):
+                pass
+            def create(self):
+                pass
+            def update(self):
+                pass
+            def partial_update(self):
+                pass
+            def destroy(self):
+                pass
+        
+        self.registry.register_viewset(CustomerViewSet)
+        
+        # Check that tools were registered with 'customers' base name (from model._meta.object_name.lower() + 's')
+        tools = self.registry.get_all_tools()
+        tool_names = [t.name for t in tools]
+        
+        # Should use 'customers' from Customer model name + 's'
+        self.assertIn('list_customers', tool_names)
+        self.assertIn('retrieve_customers', tool_names)
+        self.assertIn('create_customers', tool_names)
+        self.assertIn('update_customers', tool_names)
+        self.assertIn('partial_update_customers', tool_names)
+        self.assertIn('destroy_customers', tool_names)
     
     def test_register_viewset_with_custom_name(self):
         """Test registering a ViewSet with a custom base name."""

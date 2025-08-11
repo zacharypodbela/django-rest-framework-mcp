@@ -17,10 +17,11 @@ class MCPRegistry:
         if base_name is None:
             # Generate base name from queryset model (if one exists) or viewset class
             base_name = viewset_class.__name__.replace('ViewSet', '').lower()
-            if hasattr(viewset_class, 'queryset') and viewset_class.queryset is not None:
-                model = viewset_class.queryset.model
-                base_name = model.__name__.lower() + 's'
-        
+            try:
+                base_name = viewset_class.queryset.model._meta.object_name.lower() + 's'
+            except:
+                pass
+
         # Check for exact same ViewSet class registration (by object identity, not just class name)
         # This prevents accidental double registration while allowing legitimate multiple ViewSets with same model
         for existing_tool in self._tools.values():
