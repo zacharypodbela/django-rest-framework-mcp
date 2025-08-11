@@ -159,9 +159,9 @@ def get_base_schema_for_field(field: Field) -> Dict[str, Any]:
             schema_generator = FIELD_TYPE_REGISTRY[field_class]
             return schema_generator(field)
     
-    # Default fallback for unknown types
-    # TODO: Should we actually "skip" unknown types and not return them to the MCP Client at all?
-    return {'type': 'string'}
+    # Raise an error for unknown field types instead of silently defaulting to string
+    field_type_name = type(field).__name__
+    raise ValueError(f"Unsupported field type: {field_type_name}")
 
 
 def field_to_json_schema(field: Field) -> Dict[str, Any]:
