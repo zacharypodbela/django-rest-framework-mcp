@@ -412,6 +412,32 @@ class TestGenerateToolSchema(unittest.TestCase):
         with self.assertRaises(AssertionError):
             generate_tool_schema(tool)
     
+    def test_viewset_without_serializer_class_but_with_input_serializer(self):
+        """Test that ViewSet without serializer_class works when input_serializer is provided."""
+        class CustomInputSerializer(serializers.Serializer):
+            custom_field = serializers.CharField(help_text="Custom input field")
+        
+        class NoSerializerViewSet(ModelViewSet):
+            # No serializer_class defined
+            pass
+        
+        # Create tool with explicit input_serializer
+        tool = MCPTool(name='test_custom_input', viewset_class=NoSerializerViewSet, action='create')
+        tool.input_serializer = CustomInputSerializer
+        
+        # Should work without error since input_serializer is provided
+        schema = generate_tool_schema(tool)
+        
+        input_schema = schema['inputSchema']
+        self.assertEqual(input_schema['type'], 'object')
+        
+        # Should have body with the custom serializer fields
+        self.assertIn('body', input_schema['properties'])
+        body_schema = input_schema['properties']['body']
+        self.assertIn('custom_field', body_schema['properties'])
+        self.assertEqual(body_schema['properties']['custom_field']['type'], 'string')
+        self.assertIn('Custom input field', body_schema['properties']['custom_field']['description'])
+    
     def test_dynamic_serializer_class(self):
         """Test schema generation with dynamic serializer class method."""
         class DynamicSerializer(serializers.Serializer):
