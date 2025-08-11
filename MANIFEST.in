@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+include pyproject.toml
+recursive-include djangorestframework_mcp *.py
+recursive-exclude tests *
+recursive-exclude demo *
+recursive-exclude source-code-of-dependencies *
+recursive-exclude external-docs *
