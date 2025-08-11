@@ -344,10 +344,7 @@ class TestCustomActionValidation(unittest.TestCase):
             def custom_action(self, request):
                 return Response({'result': 'success'})
         
-        # Should not raise an exception
-        registry.register_viewset(TestViewSet)
-        
-        # Verify tool was registered
+        # Verify tool was registered (already registered via @mcp_viewset decorator)
         tools = registry.get_all_tools()
         self.assertEqual(len(tools), 1)
         self.assertEqual(tools[0].action, 'custom_action')
@@ -362,10 +359,7 @@ class TestCustomActionValidation(unittest.TestCase):
             def custom_action(self, request):
                 return Response({'result': 'success'})
         
-        # Should not raise an exception
-        registry.register_viewset(TestViewSet)
-        
-        # Verify tool was registered
+        # Verify tool was registered (already registered via @mcp_viewset decorator)
         tools = registry.get_all_tools()
         self.assertEqual(len(tools), 1)
         self.assertEqual(tools[0].action, 'custom_action')
@@ -435,10 +429,7 @@ class TestCustomActionValidation(unittest.TestCase):
             def create(self, request):
                 return Response({'id': 1})
         
-        # Should not raise an exception
-        registry.register_viewset(TestViewSet)
-        
-        # Verify tools were registered
+        # Verify tools were registered (already registered via @mcp_viewset decorator)
         tools = registry.get_all_tools()
         self.assertEqual(len(tools), 2)
         action_names = {tool.action for tool in tools}
@@ -464,14 +455,252 @@ class TestCustomActionValidation(unittest.TestCase):
             def create(self, request):
                 return Response({'id': 1})
         
-        # Should not raise an exception
-        registry.register_viewset(TestViewSet)
-        
-        # Verify tools were registered
+        # Verify tools were registered (already registered via @mcp_viewset decorator)
         tools = registry.get_all_tools()
         self.assertEqual(len(tools), 2)
         action_names = {tool.action for tool in tools}
         self.assertEqual(action_names, {'list', 'create'})
+
+
+class TestSelectiveActionRegistration(unittest.TestCase):
+    """Test edge cases in selective action registration."""
+    
+    def setUp(self):
+        from djangorestframework_mcp.registry import registry
+        registry.clear()
+    
+    def test_mixed_crud_and_custom_actions_selection(self):
+        """Test selecting a mix of CRUD and custom actions."""
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from tests.models import Customer
+        from tests.serializers import CustomerSerializer
+        
+        @mcp_viewset(actions=['list', 'create', 'custom_report'], basename='selective')
+        class SelectiveViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            serializer_class = CustomerSerializer
+            
+            @mcp_tool(input_serializer=None)
+            @action(detail=False, methods=['get'])
+            def custom_report(self, request):
+                return Response({'report': 'data'})
+            
+            @mcp_tool(input_serializer=None)
+            @action(detail=False, methods=['get'])
+            def custom_export(self, request):
+                return Response({'export': 'data'})
+        
+        from djangorestframework_mcp.registry import registry
+        tools = registry.get_all_tools()
+        tool_names = [t.name for t in tools]
+        
+        # Should have only the selected actions
+        self.assertIn('list_selective', tool_names)
+        self.assertIn('create_selective', tool_names)
+        self.assertIn('custom_report_selective', tool_names)
+        
+        # Should NOT have unselected actions
+        self.assertNotIn('retrieve_selective', tool_names)
+        self.assertNotIn('update_selective', tool_names)
+        self.assertNotIn('partial_update_selective', tool_names)
+        self.assertNotIn('destroy_selective', tool_names)
+        self.assertNotIn('custom_export_selective', tool_names)
+    
+    def test_invalid_action_names_in_selection(self):
+        """Test that invalid action names are silently ignored."""
+        from rest_framework import viewsets
+        from rest_framework.response import Response
+        from tests.models import Customer
+        from tests.serializers import CustomerSerializer
+        
+        @mcp_viewset(actions=['list', 'invalid_action', 'create'], basename='invalidaction')
+        class InvalidActionViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            serializer_class = CustomerSerializer
+            
+            def list(self, request):
+                return Response([])
+                
+            def create(self, request):
+                return Response({'id': 1})
+        
+        from djangorestframework_mcp.registry import registry
+        tools = registry.get_all_tools()
+        tool_names = [t.name for t in tools]
+        
+        # Should have valid actions
+        self.assertIn('list_invalidaction', tool_names)
+        self.assertIn('create_invalidaction', tool_names)
+        
+        # Should NOT have invalid action (doesn't exist on ViewSet)
+        self.assertNotIn('invalid_action_invalidaction', tool_names)
+    
+    def test_empty_actions_list(self):
+        """Test that empty actions list results in no registered tools."""
+        from rest_framework import viewsets
+        from tests.models import Customer
+        from tests.serializers import CustomerSerializer
+        
+        @mcp_viewset(actions=[], basename='empty')
+        class EmptyActionsViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            serializer_class = CustomerSerializer
+        
+        from djangorestframework_mcp.registry import registry
+        tools = registry.get_all_tools()
+        
+        # Should have no tools with 'empty' in the name (since we used basename='empty')
+        empty_tools = [t for t in tools if 'empty' in t.name.lower()]
+        self.assertEqual(len(empty_tools), 0)
+
+
+class TestCustomToolNamesEdgeCases(unittest.TestCase):
+    """Test edge cases for custom tool names and metadata."""
+    
+    def setUp(self):
+        from djangorestframework_mcp.registry import registry
+        registry.clear()
+    
+    def test_override_all_metadata(self):
+        """Test overriding all tool metadata (name, title, description)."""
+        from rest_framework import viewsets
+        from rest_framework.response import Response
+        
+        @mcp_viewset()
+        class CustomMetadataViewSet(viewsets.GenericViewSet):
+            @mcp_tool(
+                name='completely_custom_name',
+                title='Completely Custom Title',
+                description='A completely custom description that explains everything'
+            )
+            def list(self, request):
+                return Response([])
+        
+        from djangorestframework_mcp.registry import registry
+        tools = registry.get_all_tools()
+        
+        self.assertEqual(len(tools), 1)
+        tool = tools[0]
+        
+        self.assertEqual(tool.name, 'completely_custom_name')
+        self.assertEqual(tool.title, 'Completely Custom Title')
+        self.assertEqual(tool.description, 'A completely custom description that explains everything')
+    
+    def test_unicode_and_special_characters_in_names(self):
+        """Test that unicode and special characters work in tool names and descriptions."""
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        
+        @mcp_viewset()
+        class UnicodeViewSet(viewsets.GenericViewSet):
+            @mcp_tool(
+                name='café_search',
+                title='Search Cafés 🍵',
+                description='Search for cafés with special characters: ümlaut, café, naïve',
+                input_serializer=None
+            )
+            @action(detail=False, methods=['get'])
+            def search_cafes(self, request):
+                return Response({'cafés': ['Café Rouge', 'naïve coffee']})
+        
+        from djangorestframework_mcp.registry import registry
+        tools = registry.get_all_tools()
+        
+        self.assertEqual(len(tools), 1)
+        tool = tools[0]
+        
+        self.assertEqual(tool.name, 'café_search')
+        self.assertEqual(tool.title, 'Search Cafés 🍵')
+        self.assertIn('ümlaut', tool.description)
+        self.assertIn('café', tool.description)
+        self.assertIn('naïve', tool.description)
+    
+    def test_very_long_names(self):
+        """Test handling of very long tool names and descriptions."""
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        
+        long_name = 'a' * 200  # Very long name
+        long_title = 'T' * 300  # Very long title
+        long_description = 'D' * 1000  # Very long description
+        
+        @mcp_viewset()
+        class LongNamesViewSet(viewsets.GenericViewSet):
+            @mcp_tool(
+                name=long_name,
+                title=long_title,
+                description=long_description,
+                input_serializer=None
+            )
+            @action(detail=False, methods=['get'])
+            def long_action(self, request):
+                return Response({})
+        
+        from djangorestframework_mcp.registry import registry
+        tools = registry.get_all_tools()
+        
+        self.assertEqual(len(tools), 1)
+        tool = tools[0]
+        
+        # Should preserve the long strings
+        self.assertEqual(tool.name, long_name)
+        self.assertEqual(tool.title, long_title)
+        self.assertEqual(tool.description, long_description)
+
+
+class TestEdgeCaseViewSets(unittest.TestCase):
+    """Test various edge cases for ViewSet registration."""
+    
+    def setUp(self):
+        from djangorestframework_mcp.registry import registry
+        registry.clear()
+    
+    def test_empty_viewset_no_actions(self):
+        """Test ViewSet with no actions at all."""
+        from rest_framework import viewsets
+        
+        @mcp_viewset()
+        class EmptyViewSet(viewsets.GenericViewSet):
+            # No actions defined
+            pass
+        
+        from djangorestframework_mcp.registry import registry
+        tools = registry.get_all_tools()
+        empty_tools = [t for t in tools if 'empty' in t.name.lower()]
+        self.assertEqual(len(empty_tools), 0)
+    
+    def test_viewset_with_only_custom_actions(self):
+        """Test ViewSet with only custom actions, no CRUD."""
+        from rest_framework import viewsets
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        
+        @mcp_viewset()
+        class CustomOnlyViewSet(viewsets.GenericViewSet):
+            @mcp_tool(input_serializer=None)
+            @action(detail=False, methods=['get'])
+            def report(self, request):
+                return Response({'type': 'report'})
+            
+            @mcp_tool(input_serializer=None)
+            @action(detail=False, methods=['post'])
+            def process(self, request):
+                return Response({'type': 'process'})
+        
+        from djangorestframework_mcp.registry import registry
+        tools = registry.get_all_tools()
+        custom_tools = [t for t in tools if 'customonly' in t.name]
+        
+        # Should have exactly 2 tools (the custom actions)
+        self.assertEqual(len(custom_tools), 2)
+        
+        tool_names = [t.name for t in custom_tools]
+        self.assertIn('report_customonly', tool_names)
+        self.assertIn('process_customonly', tool_names)
 
 
 if __name__ == '__main__':

@@ -105,11 +105,9 @@ def get_serializer_schema(serializer: serializers.BaseSerializer) -> Dict[str, A
     
     schema = {
         'type': 'object',
-        'properties': properties
+        'properties': properties,
+        'required': required if required else []
     }
-    
-    if required:
-        schema['required'] = required
     
     return schema
 

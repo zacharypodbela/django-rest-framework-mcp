@@ -20,11 +20,22 @@ class MCPRegistry:
             if hasattr(viewset_class, 'queryset') and viewset_class.queryset is not None:
                 model = viewset_class.queryset.model
                 base_name = model.__name__.lower() + 's'
+        
+        # Check for exact same ViewSet class registration (by object identity, not just class name)
+        # This prevents accidental double registration while allowing legitimate multiple ViewSets with same model
+        for existing_tool in self._tools.values():
+            if existing_tool.viewset_class is viewset_class:
+                # Exact same ViewSet class object registered twice - this is likely an error
+                from django.core.exceptions import ImproperlyConfigured
+                raise ImproperlyConfigured(
+                    f'ViewSet {viewset_class.__name__} is already registered. '
+                    f'Each ViewSet class should only be registered once.'
+                )
                 
         # Register standard CRUD actions automatically, and custom actions only if decorated with @mcp_tool
         registerable_actions = self._get_registerable_actions(viewset_class)
         for action_name in registerable_actions:
-            if actions and action_name not in actions:
+            if actions is not None and action_name not in actions:
                 continue
             
             # Get the method (we know it exists since _get_registerable_actions found it)
@@ -62,6 +73,15 @@ class MCPRegistry:
                         f"This can be set to None if no input is needed."
                     )
 
+            # Check for tool name conflicts before registering
+            if tool_name in self._tools:
+                from django.core.exceptions import ImproperlyConfigured
+                raise ImproperlyConfigured(
+                    f'Tool with name "{tool_name}" is already registered. '
+                    f'Please provide a unique basename for viewset "{viewset_class.__name__}" '
+                    f'or a unique name for tool "{tool_name}".'
+                )
+            
             self._tools[tool_name] = tool
         
         return viewset_class

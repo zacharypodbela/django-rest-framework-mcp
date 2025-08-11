@@ -206,12 +206,9 @@ class MCPProtocolTests(TestCase):
     def setUp(self):
         """Set up test fixtures, ensuring ViewSets are registered."""
         # Import ViewSets to ensure they are registered
+        # Note: ViewSets are automatically registered when the module is imported
+        # due to @mcp_viewset decorators on the class definitions
         from tests.views import CustomerViewSet, ProductViewSet
-        from djangorestframework_mcp.decorators import mcp_viewset
-        
-        # Re-register ViewSets in case registry was cleared by other tests
-        mcp_viewset()(CustomerViewSet)
-        mcp_viewset(basename="products")(ProductViewSet)
     
     def test_initialize_request(self):
         """Test MCP initialize request."""
@@ -553,3 +550,265 @@ class MCPProtocolTests(TestCase):
         self.assertTrue(data['result']['isError'])
         error_text = data['result']['content'][0]['text'].lower()
         self.assertTrue('already exists' in error_text or 'unique' in error_text)
+
+
+@override_settings(ROOT_URLCONF='tests.urls')
+class TestMCPRequestConditionalLogic(MCPTestCase):
+    """Test conditional logic based on request.is_mcp_request."""
+    
+    def setUp(self):
+        super().setUp()
+        from djangorestframework_mcp.registry import registry
+        registry.clear()
+        
+        # Create test data
+        self.active_customer = Customer.objects.create(
+            name="Active Customer",
+            email="active@example.com",
+            age=30,
+            is_active=True
+        )
+        self.inactive_customer = Customer.objects.create(
+            name="Inactive Customer",
+            email="inactive@example.com",
+            age=25,
+            is_active=False
+        )
+    
+    def test_get_queryset_filtering_for_mcp_requests(self):
+        """Test that ViewSets can filter querysets differently for MCP requests."""
+        from rest_framework import viewsets, serializers
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset
+        
+        @mcp_viewset(basename='filteredcustomers')
+        class FilteredCustomerViewSet(viewsets.ModelViewSet):
+            def get_queryset(self):
+                # MCP clients only see active customers
+                if hasattr(self, 'request') and getattr(self.request, 'is_mcp_request', False):
+                    return Customer.objects.filter(is_active=True)
+                return Customer.objects.all()
+            
+            def get_serializer_class(self):
+                from tests.serializers import CustomerSerializer
+                return CustomerSerializer
+        
+        # Test MCP request - should only see active customers
+        result = self.call_tool('list_filteredcustomers')
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['name'], 'Active Customer')
+    
+    def test_get_serializer_class_for_mcp_requests(self):
+        """Test that ViewSets can use different serializers for MCP requests."""
+        from rest_framework import viewsets, serializers
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset
+        
+        class SimplifiedCustomerSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = Customer
+                fields = ['name', 'email']  # Simplified for MCP
+        
+        @mcp_viewset(basename='serializercustomers')
+        class SerializerCustomerViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            
+            def get_serializer_class(self):
+                # Use simplified serializer for MCP requests
+                if hasattr(self, 'request') and getattr(self.request, 'is_mcp_request', False):
+                    return SimplifiedCustomerSerializer
+                from tests.serializers import CustomerSerializer
+                return CustomerSerializer
+        
+        # Test MCP request - should get simplified data
+        result = self.call_tool('list_serializercustomers')
+        
+        # Should have simplified fields only
+        for customer in result:
+            expected_fields = {'name', 'email'}
+            actual_fields = set(customer.keys())
+            # MCP responses may include additional fields like 'id'
+            self.assertTrue(expected_fields.issubset(actual_fields))
+            # Should NOT have age or is_active in simplified version
+            self.assertNotIn('age', customer)
+            self.assertNotIn('is_active', customer)
+    
+    def test_custom_action_behavior_for_mcp_requests(self):
+        """Test custom actions can behave differently for MCP requests."""
+        from rest_framework import viewsets, serializers
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        
+        @mcp_viewset(basename='behavioralcustomers')
+        class BehavioralCustomerViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            
+            def get_serializer_class(self):
+                from tests.serializers import CustomerSerializer
+                return CustomerSerializer
+            
+            @mcp_tool(input_serializer=None)
+            @action(detail=False, methods=['get'])
+            def get_stats(self, request):
+                if getattr(request, 'is_mcp_request', False):
+                    # MCP gets simplified stats
+                    return Response({
+                        'total_customers': Customer.objects.count(),
+                        'type': 'mcp_stats'
+                    })
+                else:
+                    # Regular API gets detailed stats
+                    return Response({
+                        'total_customers': Customer.objects.count(),
+                        'active_customers': Customer.objects.filter(is_active=True).count(),
+                        'inactive_customers': Customer.objects.filter(is_active=False).count(),
+                        'avg_age': 27.5,
+                        'type': 'detailed_stats'
+                    })
+        
+        # Test MCP request
+        result = self.call_tool('get_stats_behavioralcustomers')
+        self.assertEqual(result['type'], 'mcp_stats')
+        self.assertIn('total_customers', result)
+        self.assertNotIn('active_customers', result)  # Simplified version
+
+
+@override_settings(ROOT_URLCONF='tests.urls')
+class TestViewSetInheritancePatterns(MCPTestCase):
+    """Test MCP integration with ViewSet inheritance patterns."""
+    
+    def setUp(self):
+        super().setUp()
+        from djangorestframework_mcp.registry import registry
+        registry.clear()
+    
+    def test_mcp_viewset_inheriting_from_regular_viewset(self):
+        """Test MCP ViewSet inheriting from a regular ViewSet works correctly."""
+        from rest_framework import viewsets
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset
+        
+        # Base ViewSet (not MCP-enabled)
+        class BaseCustomerViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            
+            def get_serializer_class(self):
+                from tests.serializers import CustomerSerializer
+                return CustomerSerializer
+                
+            def get_queryset(self):
+                # Base behavior: filter out customers with no email
+                return super().get_queryset().exclude(email='')
+                
+            def list(self, request, *args, **kwargs):
+                # Custom list behavior
+                queryset = self.filter_queryset(self.get_queryset())
+                serializer = self.get_serializer(queryset, many=True)
+                return Response({
+                    'customers': serializer.data,
+                    'count': queryset.count(),
+                    'source': 'inherited'
+                })
+        
+        # MCP-enabled ViewSet inheriting from base
+        @mcp_viewset(basename='inheritedcustomers')
+        class InheritedCustomerViewSet(BaseCustomerViewSet):
+            pass  # Inherits all behavior from BaseCustomerViewSet
+        
+        # Should work with inherited behavior
+        result = self.call_tool('list_inheritedcustomers')
+        
+        # Should have inherited custom structure
+        self.assertIn('customers', result)
+        self.assertIn('count', result)
+        self.assertEqual(result['source'], 'inherited')
+    
+    def test_multiple_inheritance_with_mixins(self):
+        """Test MCP ViewSet with multiple inheritance and mixins."""
+        from rest_framework import viewsets, mixins
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset
+        
+        # Custom mixin
+        class CustomMixin:
+            def get_custom_data(self):
+                return {'mixin_data': 'from_mixin'}
+        
+        # MCP ViewSet with multiple inheritance
+        @mcp_viewset(basename='mixincustomers')
+        class MixinCustomerViewSet(CustomMixin, 
+                                   mixins.ListModelMixin,
+                                   mixins.CreateModelMixin,
+                                   viewsets.GenericViewSet):
+            queryset = Customer.objects.all()
+            
+            def get_serializer_class(self):
+                from tests.serializers import CustomerSerializer
+                return CustomerSerializer
+            
+            def list(self, request, *args, **kwargs):
+                # Use inherited behavior but add mixin data
+                response = super().list(request, *args, **kwargs)
+                response.data = {
+                    'customers': response.data,
+                    **self.get_custom_data()
+                }
+                return response
+        
+        # Test that it works with multiple inheritance
+        result = self.call_tool('list_mixincustomers')
+        
+        self.assertIn('customers', result)
+        self.assertIn('mixin_data', result)
+        self.assertEqual(result['mixin_data'], 'from_mixin')
+    
+    def test_abstract_base_viewset_pattern(self):
+        """Test abstract base ViewSet pattern with MCP."""
+        from rest_framework import viewsets
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset
+        
+        # Abstract base ViewSet
+        class AbstractBaseViewSet(viewsets.ModelViewSet):
+            """Abstract base with common functionality."""
+            
+            def get_serializer_class(self):
+                from tests.serializers import CustomerSerializer
+                return CustomerSerializer
+            
+            def get_base_context(self):
+                return {
+                    'api_version': '1.0',
+                    'timestamp': '2024-01-01T00:00:00Z'
+                }
+            
+            def list(self, request, *args, **kwargs):
+                response = super().list(request, *args, **kwargs)
+                # Add base context to all list responses
+                return Response({
+                    'data': response.data,
+                    'meta': self.get_base_context()
+                })
+            
+            class Meta:
+                abstract = True
+        
+        # Concrete implementation
+        @mcp_viewset(basename='abstractcustomers')
+        class ConcreteCustomerViewSet(AbstractBaseViewSet):
+            queryset = Customer.objects.all()
+            
+            def get_base_context(self):
+                # Override base context
+                base_context = super().get_base_context()
+                base_context['concrete_viewset'] = True
+                return base_context
+        
+        # Test abstract base pattern works
+        result = self.call_tool('list_abstractcustomers')
+        
+        self.assertIn('data', result)
+        self.assertIn('meta', result)
+        self.assertEqual(result['meta']['api_version'], '1.0')
+        self.assertTrue(result['meta']['concrete_viewset'])

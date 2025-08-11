@@ -278,6 +278,118 @@ class TestMCPRegistry(unittest.TestCase):
         # Verify we have the expected number of tools (6 standard + 2 custom = 8)
         self.assertEqual(len(tools), 8)
 
+    def test_duplicate_basename_raises_error(self):
+        """Test that duplicate basenames raise ImproperlyConfigured error."""
+        from django.core.exceptions import ImproperlyConfigured
+        from rest_framework import viewsets, serializers
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset
+        
+        # Clear registry to ensure clean state
+        self.registry.clear()
+        
+        class TestSerializer(serializers.Serializer):
+            name = serializers.CharField()
+        
+        # First ViewSet with basename "conflict_test" 
+        @mcp_viewset(basename="conflict_test")
+        class CustomerViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+            
+            def list(self, request):
+                return Response([])
+        
+        # Second ViewSet with same basename should raise error
+        with self.assertRaises(ImproperlyConfigured) as cm:
+            @mcp_viewset(basename="conflict_test") 
+            class SpecialCustomerViewSet(viewsets.GenericViewSet):
+                serializer_class = TestSerializer
+                
+                def list(self, request):
+                    return Response([])
+        
+        error_msg = str(cm.exception)
+        self.assertIn('Tool with name "list_conflict_test" is already registered', error_msg)
+        self.assertIn('Please provide a unique basename', error_msg)
+        self.assertIn('SpecialCustomerViewSet', error_msg)
+    
+    def test_custom_tool_name_conflict_raises_error(self):
+        """Test that custom tool name conflicts raise ImproperlyConfigured error."""
+        from django.core.exceptions import ImproperlyConfigured
+        from rest_framework import viewsets, serializers
+        from rest_framework.decorators import action
+        from rest_framework.response import Response
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        
+        # Clear registry to ensure clean state
+        self.registry.clear()
+        
+        class TestSerializer(serializers.Serializer):
+            name = serializers.CharField()
+        
+        # First ViewSet with custom tool name
+        @mcp_viewset(basename="first")
+        class FirstViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+            
+            @mcp_tool(name="unique_custom_action_name", input_serializer=None)
+            @action(detail=False, methods=['get'])
+            def action1(self, request):
+                return Response({})
+        
+        # Second ViewSet with same custom tool name should raise error
+        with self.assertRaises(ImproperlyConfigured) as cm:
+            @mcp_viewset(basename="second")
+            class SecondViewSet(viewsets.GenericViewSet):
+                serializer_class = TestSerializer
+                
+                @mcp_tool(name="unique_custom_action_name", input_serializer=None)
+                @action(detail=False, methods=['get']) 
+                def action2(self, request):
+                    return Response({})
+        
+        error_msg = str(cm.exception)
+        self.assertIn('Tool with name "unique_custom_action_name" is already registered', error_msg)
+        self.assertIn('Please provide a unique basename', error_msg)
+        self.assertIn('SecondViewSet', error_msg)
+    
+    def test_no_conflict_with_different_basenames(self):
+        """Test that different basenames don't cause conflicts."""
+        from rest_framework import viewsets, serializers
+        from rest_framework.response import Response
+        
+        # Clear registry to ensure clean state
+        self.registry.clear()
+        
+        class TestSerializer(serializers.Serializer):
+            name = serializers.CharField()
+        
+        # Two ViewSets with different basenames should work fine
+        class CustomerViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+            
+            def list(self, request):
+                return Response([])
+        
+        class UserViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+            
+            def list(self, request):
+                return Response([])
+        
+        # Manually register with different basenames (instead of using decorator)
+        self.registry.register_viewset(CustomerViewSet, None, "test_customers")
+        self.registry.register_viewset(UserViewSet, None, "test_users") 
+        
+        # Both should be registered successfully
+        tools = self.registry.get_all_tools()
+        tool_names = [tool.name for tool in tools]
+        
+        self.assertIn("list_test_customers", tool_names)
+        self.assertIn("list_test_users", tool_names)
+        # Should have exactly these 2 tools
+        self.assertEqual(len(tools), 2)
+
 
 if __name__ == '__main__':
     unittest.main()
