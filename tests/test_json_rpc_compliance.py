@@ -1,5 +1,5 @@
 """
-Test response schema consistency across all MCP operations.
+Test JSON-RPC 2.0 protocol compliance for all MCP operations.
 """
 
 import json
@@ -10,15 +10,15 @@ from djangorestframework_mcp.registry import registry
 from djangorestframework_mcp.types import MCPTool
 
 
-class ResponseSchemaConsistencyTests(TestCase):
-    """Test that all responses follow consistent schemas."""
+class JsonRpcProtocolComplianceTests(TestCase):
+    """Test that all responses conform to JSON-RPC 2.0 protocol standards."""
     
     def setUp(self):
         self.client = Client()
         self.view = MCPView()
         
-    def test_json_rpc_success_schema(self):
-        """Test that all JSON-RPC success responses have consistent schema."""
+    def test_json_rpc_success_response_format(self):
+        """Test that JSON-RPC success responses conform to 2.0 specification."""
         # Test initialize
         request_data = {
             'jsonrpc': '2.0',
@@ -35,15 +35,15 @@ class ResponseSchemaConsistencyTests(TestCase):
         
         data = json.loads(response.content)
         
-        # All success responses MUST have these fields
+        # Per JSON-RPC 2.0 spec, success responses MUST have these fields
         self.assertIn('jsonrpc', data)
         self.assertEqual(data['jsonrpc'], '2.0')
         self.assertIn('result', data)
         self.assertIn('id', data)
         self.assertNotIn('error', data)  # Success should not have error field
         
-    def test_json_rpc_error_schema(self):
-        """Test that all JSON-RPC error responses have consistent schema."""
+    def test_json_rpc_error_response_format(self):
+        """Test that JSON-RPC error responses conform to 2.0 specification."""
         # Test with invalid method
         request_data = {
             'jsonrpc': '2.0',
@@ -60,21 +60,21 @@ class ResponseSchemaConsistencyTests(TestCase):
         
         data = json.loads(response.content)
         
-        # All error responses MUST have these fields
+        # Per JSON-RPC 2.0 spec, error responses MUST have these fields
         self.assertIn('jsonrpc', data)
         self.assertEqual(data['jsonrpc'], '2.0')
         self.assertIn('error', data)
         self.assertIn('id', data)
         self.assertNotIn('result', data)  # Error should not have result field
         
-        # Error object must have code and message
+        # Per JSON-RPC 2.0 spec, error object must have code and message
         self.assertIn('code', data['error'])
         self.assertIn('message', data['error'])
         self.assertIsInstance(data['error']['code'], int)
         self.assertIsInstance(data['error']['message'], str)
         
-    def test_tool_call_success_schema(self):
-        """Test that tool call success responses have consistent schema."""
+    def test_tool_call_success_response_format(self):
+        """Test that tool call success responses conform to JSON-RPC 2.0 and MCP specifications."""
         # Mock a successful tool execution
         with patch.object(registry, 'get_tool_by_name') as mock_get_tool:
             # Create a proper mock viewset class
@@ -117,7 +117,7 @@ class ResponseSchemaConsistencyTests(TestCase):
             self.assertIn('result', data)
             result = data['result']
             
-            # Tool success MUST have content array
+            # Per MCP spec, tool success MUST have content array
             self.assertIn('content', result)
             self.assertIsInstance(result['content'], list)
             self.assertGreater(len(result['content']), 0)
@@ -131,8 +131,8 @@ class ResponseSchemaConsistencyTests(TestCase):
             # Success should NOT have isError field
             self.assertNotIn('isError', result)
                 
-    def test_tool_call_error_schema(self):
-        """Test that tool call error responses have consistent schema."""
+    def test_tool_call_error_response_format(self):
+        """Test that tool call error responses conform to JSON-RPC 2.0 and MCP specifications."""
         # Mock a failed tool execution
         with patch.object(registry, 'get_tool_by_name') as mock_get_tool:
             mock_tool = MCPTool(
@@ -167,7 +167,7 @@ class ResponseSchemaConsistencyTests(TestCase):
                 self.assertIn('result', data)
                 result = data['result']
                 
-                # Tool error MUST have content array
+                # Per MCP spec, tool error MUST have content array
                 self.assertIn('content', result)
                 self.assertIsInstance(result['content'], list)
                 self.assertGreater(len(result['content']), 0)
@@ -181,12 +181,12 @@ class ResponseSchemaConsistencyTests(TestCase):
                 # Error text should have consistent format
                 self.assertTrue(content['text'].startswith('Error executing tool:'))
                 
-                # Error MUST have isError field set to True
+                # Per MCP spec, error MUST have isError field set to True
                 self.assertIn('isError', result)
                 self.assertEqual(result['isError'], True)
                 
-    def test_parse_error_schema(self):
-        """Test that parse errors have consistent schema."""
+    def test_json_rpc_parse_error_format(self):
+        """Test that JSON-RPC parse errors conform to 2.0 specification."""
         response = self.client.post(
             '/mcp/',
             data='invalid json',
@@ -195,17 +195,17 @@ class ResponseSchemaConsistencyTests(TestCase):
         
         data = json.loads(response.content)
         
-        # Parse error response schema
+        # JSON-RPC 2.0 parse error response format
         self.assertIn('jsonrpc', data)
         self.assertEqual(data['jsonrpc'], '2.0')
         self.assertIn('error', data)
         self.assertEqual(data['error']['code'], -32700)
         self.assertEqual(data['error']['message'], 'Parse error')
         self.assertIn('id', data)
-        self.assertIsNone(data['id'])  # Parse errors have null id
+        self.assertIsNone(data['id'])  # JSON-RPC 2.0: parse errors have null id
         
-    def test_internal_error_schema(self):
-        """Test that internal errors have consistent schema."""
+    def test_json_rpc_internal_error_format(self):
+        """Test that JSON-RPC internal errors conform to 2.0 specification."""
         with patch.object(MCPView, 'handle_initialize') as mock_handler:
             mock_handler.side_effect = Exception("Internal test error")
             
@@ -224,7 +224,7 @@ class ResponseSchemaConsistencyTests(TestCase):
             
             data = json.loads(response.content)
             
-            # Internal error response schema
+            # JSON-RPC 2.0 internal error response format
             self.assertIn('jsonrpc', data)
             self.assertEqual(data['jsonrpc'], '2.0')
             self.assertIn('error', data)
