@@ -24,34 +24,37 @@ INSTALLED_APPS = [
 ```python
 urlpatterns = [
     # ... your other URL patterns
-    path('', include('djangorestframework_mcp.urls')),
+    path('mcp/', include('djangorestframework_mcp.urls')),
 ]
 ```
 
 4. Transform any DRF ViewSet into MCP tools with a single decorator:
 
 ```python
-from djangorestframework_mcp import mcp_tool
+from djangorestframework_mcp.decorators import mcp_viewset
 
-@mcp_tool()
+@mcp_viewset()
 class CustomerViewSet(ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
 ```
 
-With that one line of code all CRUD actions of your ViewSet are exposed as MCP tools:
+When `@mcp_viewset` is applied to a ViewSet class that inherits from `GenericViewSet` (such as `ModelViewSet` or `ReadOnlyModelViewSet`), any of the following methods that are defined will be automatically exposed as MCP tools:
 
-- List customers with `customers_list`
-- Retrieve a customer with `customers_retrieve`
-- Create new customers with `customers_create`
-- Update customers with `customers_update`
-- Delete customers with `customers_destroy`
+- `list` -> List customers with `customers_list` tool.
+- `retrieve` -> Retrieve a customer with `customers_retrieve` tool.
+- `create` -> Create new customers with `customers_create` tool.
+- `update` -> Update customers with `customers_update` tool. (All fields must be passed in)
+- `partial_update` -> Update customers with `customers_partial_update` tool. (A subset of fields can be passed in)
+- `destroy` -> Delete customers with `customers_destroy` tool.
 
-The library automatically:
+For each tool the library automatically:
 
 - Generates tool schemas from your DRF serializers
 - Preserves your existing permissions, authentication, and filtering
-- Provides helpful error messages to guide LLMs
+- Returns context rich error messages to guide LLMs
+
+(See: _Custom Actions_ below for more info on how to expose additional endpoints you created using the `@action` decorator as tools).
 
 5. Connect any MCP client to `http://localhost:8000/mcp/` and try it out!
 
@@ -85,21 +88,84 @@ Follow these instructions to use `mcp-remote` to connect to Claude Desktop:
 
 3. Restart Claude Desktop and test your tools
 
+**Development Tip:** LLMs can be surprisingly effective at “manually” testing your MCP tools and uncovering bugs. In Claude Desktop, try a prompt like: _"I'm developing a new set of MCP tools locally. Please extensively test them — including coming up with complex edge cases to try - and look for unexpected behavior or bugs. Make at least 30 tool calls."_
+
 ## Advanced Configuration
 
-### Custom Tool Names and Descriptions
+### Custom Actions
 
-Override the default tool names to help LLMs understand your tools better:
+Custom actions, created with the `@action` decorator, require explicit schema definition since there aren't standard input defaults like with CRUD endpoints. To create a tool from a custom action, apply the `@mcp_tool` decorator and pass in an `input_serializer`:
 
 ```python
-@mcp_tool(name="customer_management")
+from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+
+class GenerateInputSerializer(serializers.Serializer):
+    user_prompt = serializers.CharField(help_text="The prompt to send to the LLM")
+
+@mcp_viewset()
+class ContentViewSet(viewsets.ViewSet):
+    @mcp_tool(input_serializer=GenerateInputSerializer)
+    @action(detail=False, methods=['post'])
+    def generate(self, request):
+        user_prompt = request.data['user_prompt']
+        llm_response = call_llm(user_prompt)
+        return Response({'llm_response': llm_response})
+```
+
+For custom actions that don't require input, set `input_serializer=None`:
+
+```python
+@mcp_tool(input_serializer=None)  # No input needed
+@action(detail=False, methods=['get'])
+def recent_posts(self, request):
+    recent_posts = Post.objects.filter(created_at__gte=timezone.now() - timedelta(days=7))
+    serializer = PostSerializer(recent_posts, many=True)
+    return Response(serializer.data)
+```
+
+For CRUD actions (`list`, `retrieve`, `create`, `update`, `partial_update`, `destroy`), `input_serializer` is **optional**. The library will default to inferring schemas from the ViewSet's `serializer_class` if `input_serializer` is not specified. You'll want to use this optional parameter if you've written custom business logic that changes the input schema of a CRUD endpoint.
+
+```python
+class ExtendedPostSerializer(PostSerializer): # Inherits and extends standard CRUD serializer
+    add_created_at_footer = serializers.BooleanField(help_text="Setting to true appends the author name")
+
+@mcp_tool(input_serializer=ExtendedPostSerializer)
+def create(self, request, *args, **kwargs):
+    if request.data.get('add_created_at_footer'):
+        # Append text to the end of the content noting it was created via MCP
+        request.data['content'] += f"\n\n*Created by {request.user.name}*"
+
+    return super().create(request, *args, **kwargs)
+```
+
+### Selective Action Registration
+
+If you don't want to create a tool from every action of a ViewSet, you can whitelist which actions to expose by passing an `actions` array to `@mcp_viewset`:
+
+```python
+@mcp_viewset(actions=['banish', 'list'])
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
 
-    @mcp_tool.action(
-        name="get_customer",
-        description="Retrieve a specific customer by their ID"
+    def banish(self, request, pk=None):
+        # ... Business Logic
+```
+
+### Custom Tool Names and Descriptions
+
+You can customize the names, titles, and descriptions of individual actions using the `@mcp_tool` decorator. (NOTE: The `@mcp_tool` decorator only works when the ViewSet class is also decorated with `@mcp_viewset`. Using `@mcp_tool` alone will not register any MCP tools.)
+
+```python
+@mcp_viewset()
+class CustomerViewSet(viewsets.ModelViewSet):
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer
+
+    @mcp_tool(
+        name="get_customer_details",
+        title="Get Customer Details",
+        description="Retrieve detailed information about a specific customer by their ID"
     )
     def retrieve(self, request, pk=None):
         return super().retrieve(request, pk)
@@ -114,7 +180,7 @@ Sometimes you want different behavior for MCP requests vs regular API requests. 
 Create a dedicated ViewSet for MCP that inherits from your existing ViewSet.
 
 ```python
-@mcp_tool()
+@mcp_viewset()
 class CustomerMCPViewSet(CustomerViewSet):
     # Limit MCP clients to active customers only
     queryset = super().get_queryset().filter(is_active=True)
@@ -132,7 +198,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 Use the `request.is_mcp_request` property to conditionally modify behavior within your existing ViewSet.
 
 ```python
-@mcp_tool()
+@mcp_viewset()
 class CustomerViewSet(viewsets.ModelViewSet):
     def get_queryset(self, request):
         queryset = Customer.objects.all()
@@ -155,20 +221,49 @@ class CustomerViewSet(viewsets.ModelViewSet):
 The library provides test utilities to verify your MCP tools work correctly:
 
 ```python
-from djangorestframework_mcp.test import MCPTestCase
+from django.test import TestCase
+from djangorestframework_mcp.test import MCPClient
 
-class CustomerMCPTests(MCPTestCase):
+class CustomerMCPTests(TestCase):
     def test_list_customers(self):
         # Create test data
         Customer.objects.create(name="Alice", email="alice@example.com")
         Customer.objects.create(name="Bob", email="bob@example.com")
 
-        # Call the MCP tool
-        result = self.call_tool("customers_list")
+        # Create MCP client and call tool
+        client = MCPClient()
+        result = client.call_tool("customers_list")
 
         # Assert the response
-        self.assertEqual(result['status'], 'success')
-        self.assertEqual(len(result['data']), 2)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 2)
+
+    def test_error_handling(self):
+        # Test validation errors
+        client = MCPClient()
+        result = client.call_tool("create_customers", {"body": {}})
+
+        self.assertTrue(result.get('isError'))
+        self.assertIn('Body is required', result['content'][0]['text'])
+```
+
+### Array Inputs
+
+For endpoints that accept arrays of data (like bulk operations), create a `ListSerializer` subclass and use it as your `input_serializer`:
+
+```python
+class CustomerListSerializer(serializers.ListSerializer):
+    child = CustomerSerializer()
+
+@mcp_viewset()
+class CustomerViewSet(viewsets.ModelViewSet):
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer
+
+    @mcp_tool(input_serializer=CustomerListSerializer)
+    @action(detail=False, methods=['post'])
+    def bulk_create(self, request):
+      # ... request.data will be an array of Posts
 ```
 
 ## Roadmap
@@ -177,38 +272,41 @@ class CustomerMCPTests(MCPTestCase):
 
 **MVP Features (Available Now)**
 
-- ✅ Automatic tool generation for ModelViewSet / APIViewMixins CRUD actions (list/retrieve/create/update/partial_update/destroy)
+- ✅ Automatically generates tools for all actions on any ViewSet
+  - ✅ CRUD actions (list/retrieve/create/update/partial_update/destroy)
+  - ✅ Custom actions (created with @action decorator)
+- ✅ Implements [MCP protocol](https://modelcontextprotocol.io/) for Initialization and Tools (discovery and invocation)
+  - _[Coming later: support for resources, prompts, notifications]_
 - ✅ HTTP transport via `/mcp` endpoint
-- ✅ Full MCP protocol support (tool discovery and invocation) as laid out in [MCP Protocol](https://modelcontextprotocol.io/)
+  - _[Coming later: sse & stdio]_
 - ✅ Auto-generated tool input/output schemas from DRF serializers
-- ✅ Primitive type support (string/int/float/bool/datetime/date/time/UUID)
+  - ✅ Required/optional inferred automatically
+  - ✅ Constraints (min/max length, min/max value) inferred automatically
+  - ✅ help_text/label passed back to MCP Client as parameter title and description
+  - ✅ Primitive types (string/int/float/bool/datetime/date/time/UUID)
+  - ✅ Nested Serializers
+  - ✅ ListSerializers
+  - ✅ Formatting inferred and passed back to MCP Client as part of field description.
+  - _[Coming later: additional advanced types]_
 - ✅ Test utilities for MCP tools
 
 ### Future Roadmap
 
 - Resource and prompt discovery and invocation as laid out in [MCP Protocol](https://modelcontextprotocol.io/)
 
+- Notifications as laid out in [MCP Protocol](https://modelcontextprotocol.io/)
+
 - Browsable UI of MCP tool, resource, and prompts discovery and invocation
-
-- Tool Definition Decorator for any subclass of ViewSet/GenericViewSet [Not sure if we'll support both - TBD]
-
-- Tool Definition Decorator and automatic detection for custom actions defined via @action (detail or list)
-
-- Required/optional inferred automatically
-
-- Constraints (min/max length, min/max value) inferred automatically
 
 - Decorate custom validators with instructions (which will be shared with the MCP Client)
 
 - Relationship fields (PK/Slug/StringRelated)
 
-- Support for Nested serializers
-
 - Arrays/objects/JSONB fields
 
 - Enum fields
 
-- help_text/label passed back to MCP Client as parameter descriptions
+- Support for other kwargs besides the lookup_url_kwarg.
 
 - Permission requirements advertised in tool schema
 
@@ -254,22 +352,25 @@ class CustomerMCPTests(MCPTestCase):
 
 ### Decorators
 
-#### `@mcp_tool(name=None)`
+#### `@mcp_viewset(basename=None, actions=None)`
 
-Decorator for ViewSets to expose as MCP tools.
-
-**Parameters:**
-
-- `name` (str, optional): Custom name for the tool set. Defaults to the ViewSet's model name.
-
-#### `@mcp_tool.action(name=None, description=None)`
-
-Decorator for individual ViewSet actions to customize their MCP exposure.
+Class decorator for ViewSets that inherit from `GenericViewSet` to expose actions as MCP tools. Compatible with `ModelViewSet`, `ReadOnlyModelViewSet`, or any other ViewSets that inherit from `GenericViewSet`.
 
 **Parameters:**
 
-- `name` (str, optional): Custom name for this specific action.
+- `basename` (str, optional): Custom base name for the tool set. Used to autogenerate tool names if custom ones are not provided. Defaults to the ViewSet's model name.
+- `actions` (list, optional): List of specific actions to expose. If None, all available actions are exposed.
+
+#### `@mcp_tool(name=None, title=None, description=None, input_serializer=...)`
+
+Method decorator to register custom ViewSet actions and/or customize action MCP exposure. Custom actions (non-CRUD methods) must also be decorated with `@action`.
+
+**Parameters:**
+
+- `name` (str, optional): Custom name for this specific action. If not provided, will be auto-generated from the action name.
+- `title` (str, optional): Human-readable title for the tool.
 - `description` (str, optional): Description for this specific action.
+- `input_serializer` (Serializer class or None, required for custom actions): Serializer class for input validation. Required for custom actions (can be None). Optional for CRUD actions.
 
 ### Extended HttpRequest Properties
 
@@ -279,14 +380,21 @@ Check if the current request is coming from an MCP client.
 
 ### Test Utilities
 
-#### `MCPTestCase`
+#### `MCPClient`
 
-Base test case class for testing MCP tools. Provides methods that mimic an MCP Client.
+Test client for interacting with MCP servers in your tests. Extends `django.test.Client` to handle MCP protocol communication.
+
+**Parameters:**
+
+- `mcp_endpoint` (str, optional): The URL path to the MCP server endpoint. Defaults to 'mcp/' to match the library's default routing.
+- `auto_initialize` (bool, optional): Whether to automatically perform the MCP initialization handshake. Set to False if you need to test initialization behavior explicitly. Defaults to True.
+- `*args` / `**kwargs`: Additional arguments passed to Django's Client constructor (e.g., `HTTP_HOST`, `enforce_csrf_checks`, etc.).
 
 **Methods:**
 
-- `call_tool(tool_name, params=None)`: Call an MCP tool and return the result
-- `list_tools()`: List all available MCP tools
+- `call_tool(tool_name, arguments=None)`: Execute an MCP tool and return the result
+- `list_tools()`: Discover all available MCP tools from the server
+- `initialize()`: Perform MCP initialization handshake (done automatically unless `auto_initialize=False`)
 
 ## Contributing
 
@@ -299,6 +407,7 @@ Unsurprisingly, we're using AI tools pretty actively in our development workflow
 - **`djangorestframework_mcp/`**: The library source code
 - **`tests/`**: All tests (unit and integration)
 - **`demo/`**: A working Django app for manual testing
+- **`/internal-docs`**: Documentation about the implementation, strategy, and/or goals of the `django-rest-framework-api` project.
 - **`external-docs/`**: Offline documentation for AI agents to reference without web access (ex: The Model Context Protocol Specs)
 - **`source-code-of-dependencies/`**: Read-only references to important related packages for AI agents to reference without web access (ex: `django-rest-framework`)
 
@@ -309,7 +418,7 @@ In all subdirectories below this one, the information that we want to give to CL
 #### 1. Clone and Install
 
 ```bash
-git clone https://github.com/yourusername/django-rest-framework-mcp.git
+git clone https://github.com/zacharypodbela/django-rest-framework-mcp.git
 cd django-rest-framework-mcp
 
 # Install the library in development mode with test dependencies
