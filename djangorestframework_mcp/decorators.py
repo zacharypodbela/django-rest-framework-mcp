@@ -2,13 +2,11 @@
 
 from functools import wraps
 from typing import Optional, Type
-from rest_framework.viewsets import ViewSetMixin
+from rest_framework.viewsets import GenericViewSet
 from .registry import registry
 
 class MCPViewSetDecorator:
-    """Decorator class for exposing ViewSets or individual actions as MCP tools."""
-    # TODO: Check to make sure this is not being decorated on something that doesn't inherit from ViewSetMixin.
-    # Tests should explicitly make sure that if its called on View or GenericAPIView it throws.
+    """Decorator class for exposing GenericViewSets or individual actions as MCP tools."""
 
     def __init__(self, name: Optional[str] = None, actions: Optional[list] = None):
         """
@@ -22,16 +20,23 @@ class MCPViewSetDecorator:
         self.name = name
         self.actions = actions
     
-    def __call__(self, viewset_class: Type[ViewSetMixin]) -> Type[ViewSetMixin]:
+    def __call__(self, viewset_class: Type[GenericViewSet]) -> Type[GenericViewSet]:
         """
         Decorate a ViewSet to expose it as MCP tools.
         
         Args:
-            viewset_class: The ViewSet class to decorate.
+            viewset_class: The GenericViewSet class to decorate.
             
         Returns:
             The decorated ViewSet class.
         """
+        # Validate that the class inherits from GenericViewSet
+        if not issubclass(viewset_class, GenericViewSet):
+            raise TypeError(
+                f"@mcp_viewset can only be used on classes that inherit from GenericViewSet. "
+                f"{viewset_class.__name__} inherits from {[cls.__name__ for cls in viewset_class.__bases__]}. "
+                f"Use ModelViewSet, ReadOnlyModelViewSet, or create a custom class that inherits from GenericViewSet."
+            )
         # Register the ViewSet with the MCP registry
         registry.register_viewset(viewset_class, self.actions, self.name)
         

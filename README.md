@@ -39,7 +39,7 @@ class CustomerViewSet(ModelViewSet):
     serializer_class = CustomerSerializer
 ```
 
-When `@mcp_viewset` is applied to a `ViewSet`, any of the following methods that are defined will be will automatically be exposed as MCP tools:
+When `@mcp_viewset` is applied to a ViewSet class that inherits from `GenericViewSet` (such as `ModelViewSet` or `ReadOnlyModelViewSet`), any of the following methods that are defined will be automatically exposed as MCP tools:
 
 - `list` -> List customers with `customers_list` tool.
 - `retrieve` -> Retrieve a customer with `customers_retrieve` tool.
@@ -340,7 +340,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
 #### `@mcp_viewset(name=None, actions=None)`
 
-Class decorator for ViewSets to expose all or selected actions as MCP tools.
+Class decorator for ViewSets that inherit from `GenericViewSet` to expose actions as MCP tools. Compatible with `ModelViewSet`, `ReadOnlyModelViewSet`, or any other ViewSets that inherit from `GenericViewSet`.
 
 **Parameters:**
 
