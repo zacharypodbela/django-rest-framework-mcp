@@ -338,13 +338,13 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
 ### Decorators
 
-#### `@mcp_viewset(name=None, actions=None)`
+#### `@mcp_viewset(basename=None, actions=None)`
 
 Class decorator for ViewSets that inherit from `GenericViewSet` to expose actions as MCP tools. Compatible with `ModelViewSet`, `ReadOnlyModelViewSet`, or any other ViewSets that inherit from `GenericViewSet`.
 
 **Parameters:**
 
-- `name` (str, optional): Custom name for the tool set. Defaults to the ViewSet's model name.
+- `basename` (str, optional): Custom base name for the tool set. Used to autogenerate tool names if custom ones are not provided. Defaults to the ViewSet's model name.
 - `actions` (list, optional): List of specific actions to expose. If None, all available actions are exposed.
 
 #### `@mcp_tool(name=None, title=None, description=None, input_serializer=...)`

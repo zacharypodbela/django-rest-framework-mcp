@@ -8,16 +8,15 @@ from .registry import registry
 class MCPViewSetDecorator:
     """Decorator class for exposing GenericViewSets or individual actions as MCP tools."""
 
-    def __init__(self, name: Optional[str] = None, actions: Optional[list] = None):
+    def __init__(self, basename: Optional[str] = None, actions: Optional[list] = None):
         """
         Initialize the MCP tool decorator.
         
         Args:
-            name: Custom base name for the tool set. Defaults to ViewSet's model name.
+            basename: Custom base name for the tool set. Defaults to ViewSet's model name.
             actions: List of specific actions to expose. If None, all actions are exposed.
         """
-        # TODO: Rename to basename to mirror the similar param that exists when defining routes in DRF
-        self.name = name
+        self.basename = basename
         self.actions = actions
     
     def __call__(self, viewset_class: Type[GenericViewSet]) -> Type[GenericViewSet]:
@@ -38,11 +37,11 @@ class MCPViewSetDecorator:
                 f"Use ModelViewSet, ReadOnlyModelViewSet, or create a custom class that inherits from GenericViewSet."
             )
         # Register the ViewSet with the MCP registry
-        registry.register_viewset(viewset_class, self.actions, self.name)
+        registry.register_viewset(viewset_class, self.actions, self.basename)
         
         # Mark the class as MCP-enabled
         viewset_class._mcp_enabled = True
-        viewset_class._mcp_name = self.name
+        viewset_class._mcp_basename = self.basename
         
         return viewset_class
 
