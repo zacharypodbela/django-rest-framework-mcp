@@ -16,7 +16,6 @@ class MCPRegistry:
         """Register actions from a ViewSet as MCPTools."""
         if base_name is None:
             # Generate base name from queryset model (if one exists) or viewset class
-            # TODO: Default should be reversed to be action_base_name
             base_name = viewset_class.__name__.replace('ViewSet', '').lower()
             if hasattr(viewset_class, 'queryset') and viewset_class.queryset is not None:
                 model = viewset_class.queryset.model
@@ -36,7 +35,7 @@ class MCPRegistry:
             custom_description = getattr(method, '_mcp_description', None)
             
             # Use custom values if provided, otherwise generate defaults
-            tool_name = custom_name if custom_name else f"{base_name}_{action_name}"
+            tool_name = custom_name if custom_name else f"{action_name}_{base_name}"
             title = custom_title if custom_title else self._generate_tool_title(action_name, base_name)
             description = custom_description if custom_description else f"{action_name.capitalize()} {base_name}"
             
