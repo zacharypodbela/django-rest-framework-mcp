@@ -277,14 +277,14 @@ class CustomerViewSet(viewsets.ModelViewSet):
   - _[Coming later: support for resources, prompts, notifications]_
 - ✅ HTTP transport via `/mcp` endpoint
   - _[Coming later: sse & stdio]_
-- ✅ Auto-generated tool input/output schemas from DRF serializers and action method signatures
+- ✅ Auto-generated tool input/output schemas from DRF serializers
   - ✅ Required/optional inferred automatically
   - ✅ Constraints (min/max length, min/max value) inferred automatically
   - ✅ help_text/label passed back to MCP Client as parameter title and description
   - ✅ Primitive types (string/int/float/bool/datetime/date/time/UUID)
   - ✅ Nested Serializers
   - ✅ ListSerializers
-  - ✅ Formatting inferred and passed back to MCP Client in description.
+  - ✅ Formatting inferred and passed back to MCP Client as part of field description.
   - _[Coming later: additional advanced types]_
 - ✅ Test utilities for MCP tools
 
@@ -303,6 +303,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
 - Arrays/objects/JSONB fields
 
 - Enum fields
+
+- Support for other kwargs besides the lookup_url_kwarg.
 
 - Permission requirements advertised in tool schema
 

@@ -258,28 +258,65 @@ def generate_body_schema(tool: MCPTool) -> Dict[str, Any]:
     }
 
 
-def generate_kwargs_schema(action: str) -> Dict[str, Any]:
+def generate_kwargs_schema(tool: MCPTool) -> Dict[str, Any]:
     """
     Generate the kwargs schema for a ViewSet action.
     
     Args:
-        action: The action name (list, retrieve, create, etc.).
+        tool: The MCPTool object containing all tool information.
     
     Returns:
         Dict containing kwargs schema and whether kwargs are required.
     """
     kwargs_properties = {}
     kwargs_required = []
+    
+    action = tool.action
+    viewset_class = tool.viewset_class
 
-    # TODO: Should be generalized to look at method signature. We should still have special cases of generating description for viewclass.lookup_kwarg
-
+    # Check if this action needs object lookup (detail=True for custom actions or standard detail actions)
+    needs_lookup = False
+    # Standard CRUD actions that need lookup
     if action in ['retrieve', 'update', 'partial_update', 'destroy']:
-        # These actions need a pk in kwargs
-        kwargs_properties['pk'] = {
+        needs_lookup = True
+    # Check if this is a custom action with detail=True
+    elif hasattr(viewset_class, action):
+        method = getattr(viewset_class, action)
+        if hasattr(method, 'detail'):
+            needs_lookup = method.detail
+    
+    if needs_lookup:
+        # Get the lookup field and URL kwarg from the ViewSet
+        # Create a temporary instance to get the lookup info
+        instance = viewset_class()
+        
+        # Get lookup_field (defaults to 'pk' in GenericAPIView)
+        lookup_field = getattr(instance, 'lookup_field')
+        
+        # Get lookup_url_kwarg (defaults to lookup_field if not explicitly set)
+        lookup_url_kwarg = getattr(instance, 'lookup_url_kwarg') or lookup_field
+
+        # If the lookup_field is "pk", fetch the actual field name for us to share with the LLM in the description
+        lookup_field_name = lookup_field
+        if lookup_field == 'pk':
+            # Try to get the actual primary key field name from the model
+            try:
+                queryset = instance.get_queryset()
+                model = queryset.model
+                lookup_field_name = model._meta.pk.name
+            except:
+                # Fallback if we can't determine the pk field from the model
+                # NOTE: This is really not ideal though. In the future we might consider stronger enforcement of requirements 
+                # (like requiring get_queryset be implemented) if we find that this degrades LLM ability to use detail tools 
+                # to the point that the tools are not really usable
+                lookup_field_name = 'primary key'
+        
+        # Add the lookup parameter
+        kwargs_properties[lookup_url_kwarg] = {
             'type': 'string',
-            'description': 'The primary key of the resource'
+            'description': f'The {lookup_field_name} of the resource' # TODO: Get the name of the resource
         }
-        kwargs_required.append('pk')
+        kwargs_required.append(lookup_url_kwarg)
     
     if action == 'partial_update':
         # partial_update also needs partial=True in kwargs
@@ -317,7 +354,7 @@ def generate_tool_schema(tool: MCPTool) -> Dict[str, Any]:
         MCP tool schema dict with structured input.
     """
     # Generate the component schemas
-    kwargs_info = generate_kwargs_schema(tool.action)
+    kwargs_info = generate_kwargs_schema(tool)
     body_info = generate_body_schema(tool)
     
     # Stitch together the top-level inputSchema

@@ -8,7 +8,8 @@ from djangorestframework_mcp.schema import (
     field_to_json_schema,
     get_serializer_schema,
     generate_tool_schema,
-    generate_body_schema
+    generate_body_schema,
+    generate_kwargs_schema
 )
 from djangorestframework_mcp.types import MCPTool
 from djangorestframework_mcp.registry import registry
@@ -832,6 +833,264 @@ class TestNestedListSerializers(unittest.TestCase):
         self.assertEqual(item_schema['type'], 'object')
         self.assertIn('id', item_schema['properties'])
         self.assertIn('name', item_schema['properties'])
+
+
+class TestEnhancedLookupFieldSupport(unittest.TestCase):
+    """Test enhanced lookup field support for custom fields and detail actions."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        registry.clear()
+        # Import decorators here to avoid circular imports
+        from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
+        self.mcp_viewset = mcp_viewset
+        self.mcp_tool = mcp_tool
+    
+    def test_custom_lookup_field_with_slug(self):
+        """Test ViewSet with custom lookup_field."""
+        from rest_framework import viewsets
+        from .serializers import CustomerSerializer
+        from .models import Customer
+        
+        @self.mcp_viewset()
+        class SlugCustomerViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            serializer_class = CustomerSerializer
+            lookup_field = 'slug'  # Use slug instead of pk
+        
+        # Get retrieve tool
+        tools = registry.get_all_tools()
+        retrieve_tool = next(t for t in tools if t.action == 'retrieve')
+        
+        # Generate kwargs schema
+        kwargs_info = generate_kwargs_schema(retrieve_tool)
+        
+        # Should require 'slug' parameter instead of 'pk'
+        self.assertIsNotNone(kwargs_info['schema'])
+        self.assertTrue(kwargs_info['is_required'])
+        self.assertIn('slug', kwargs_info['schema']['properties'])
+        self.assertNotIn('pk', kwargs_info['schema']['properties'])
+        
+        # Check description
+        slug_property = kwargs_info['schema']['properties']['slug']
+        self.assertEqual(slug_property['type'], 'string')
+        self.assertEqual(slug_property['description'], 'The slug of the resource')
+    
+    def test_custom_lookup_url_kwarg(self):
+        """Test ViewSet with custom lookup_url_kwarg."""
+        from rest_framework import viewsets
+        from .serializers import CustomerSerializer
+        from .models import Customer
+        
+        @self.mcp_viewset()
+        class CustomURLKwargViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            serializer_class = CustomerSerializer
+            lookup_field = 'pk'
+            lookup_url_kwarg = 'customer_id'  # Different URL param name
+        
+        # Get retrieve tool
+        tools = registry.get_all_tools()
+        retrieve_tool = next(t for t in tools if t.action == 'retrieve')
+        
+        # Generate kwargs schema
+        kwargs_info = generate_kwargs_schema(retrieve_tool)
+        
+        # Should require 'customer_id' parameter
+        self.assertIsNotNone(kwargs_info['schema'])
+        self.assertTrue(kwargs_info['is_required'])
+        self.assertIn('customer_id', kwargs_info['schema']['properties'])
+        self.assertNotIn('pk', kwargs_info['schema']['properties'])
+        
+        # Description should show 'id' since lookup_field is 'pk' and actual field is 'id'
+        customer_id_property = kwargs_info['schema']['properties']['customer_id']
+        self.assertEqual(customer_id_property['description'], 'The id of the resource')
+    
+    def test_custom_action_with_detail_true(self):
+        """Test custom action with detail=True requires lookup parameter."""
+        from rest_framework import viewsets
+        from rest_framework.response import Response
+        from rest_framework.decorators import action
+        from .serializers import CustomerSerializer
+        from .models import Customer
+        
+        @self.mcp_viewset()
+        class DetailActionViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            serializer_class = CustomerSerializer
+            
+            @self.mcp_tool(input_serializer=None)
+            @action(detail=True, methods=['post'])
+            def activate(self, request, pk=None):
+                return Response({'activated': True})
+        
+        # Get activate tool
+        tools = registry.get_all_tools()
+        activate_tool = next(t for t in tools if t.action == 'activate')
+        
+        # Generate kwargs schema
+        kwargs_info = generate_kwargs_schema(activate_tool)
+        
+        # Should require pk parameter since detail=True
+        self.assertIsNotNone(kwargs_info['schema'])
+        self.assertTrue(kwargs_info['is_required'])
+        self.assertIn('pk', kwargs_info['schema']['properties'])
+        self.assertEqual(kwargs_info['schema']['required'], ['pk'])
+        
+        # Check that pk description shows actual primary key field name
+        pk_property = kwargs_info['schema']['properties']['pk']
+        self.assertEqual(pk_property['description'], 'The id of the resource')
+    
+    def test_custom_action_with_detail_false(self):
+        """Test custom action with detail=False does not require lookup parameter."""
+        from rest_framework import viewsets
+        from rest_framework.response import Response
+        from rest_framework.decorators import action
+        from .serializers import CustomerSerializer
+        from .models import Customer
+        
+        @self.mcp_viewset()
+        class ListActionViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            serializer_class = CustomerSerializer
+            
+            @self.mcp_tool(input_serializer=None)
+            @action(detail=False, methods=['get'])
+            def statistics(self, request):
+                return Response({'count': 10})
+        
+        # Get statistics tool
+        tools = registry.get_all_tools()
+        stats_tool = next(t for t in tools if t.action == 'statistics')
+        
+        # Generate kwargs schema
+        kwargs_info = generate_kwargs_schema(stats_tool)
+        
+        # Should not require any parameters since detail=False
+        self.assertIsNone(kwargs_info['schema'])
+        self.assertFalse(kwargs_info['is_required'])
+    
+    def test_custom_action_with_detail_true_and_custom_lookup(self):
+        """Test custom action with detail=True and custom lookup field."""
+        from rest_framework import viewsets
+        from rest_framework.response import Response
+        from rest_framework.decorators import action
+        from .serializers import CustomerSerializer
+        from .models import Customer
+        
+        @self.mcp_viewset()
+        class CustomLookupDetailActionViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            serializer_class = CustomerSerializer
+            lookup_field = 'uuid'
+            lookup_url_kwarg = 'user_uuid'
+            
+            @self.mcp_tool(input_serializer=None)
+            @action(detail=True, methods=['post'])
+            def send_email(self, request, user_uuid=None):
+                return Response({'email_sent': True})
+        
+        # Get send_email tool
+        tools = registry.get_all_tools()
+        email_tool = next(t for t in tools if t.action == 'send_email')
+        
+        # Generate kwargs schema
+        kwargs_info = generate_kwargs_schema(email_tool)
+        
+        # Should require user_uuid parameter
+        self.assertIsNotNone(kwargs_info['schema'])
+        self.assertTrue(kwargs_info['is_required'])
+        self.assertIn('user_uuid', kwargs_info['schema']['properties'])
+        self.assertNotIn('pk', kwargs_info['schema']['properties'])
+        self.assertNotIn('uuid', kwargs_info['schema']['properties'])
+        
+        # Check description for uuid field
+        uuid_property = kwargs_info['schema']['properties']['user_uuid']
+        self.assertEqual(uuid_property['description'], 'The uuid of the resource')
+    
+    
+    def test_pk_description_fallback(self):
+        """Test that 'pk' lookup field falls back to generic description when model can't be determined."""
+        from rest_framework import viewsets
+        from djangorestframework_mcp.types import MCPTool
+        
+        # Create a minimal viewset without proper queryset
+        class MinimalViewSet(viewsets.ModelViewSet):
+            def get_queryset(self):
+                raise Exception("Can't get queryset")
+        
+        # Create a tool manually
+        tool = MCPTool(
+            name='test_tool',
+            title='Test Tool',
+            description='Test',
+            viewset_class=MinimalViewSet,
+            action='retrieve'
+        )
+        
+        # Generate kwargs schema
+        kwargs_info = generate_kwargs_schema(tool)
+        
+        # Should fall back to 'primary key' when model can't be determined
+        pk_property = kwargs_info['schema']['properties']['pk']
+        self.assertEqual(pk_property['description'], 'The primary key of the resource')
+    
+    def test_pk_description_shows_actual_field_name(self):
+        """Test that 'pk' lookup field shows actual primary key field name in description."""
+        from rest_framework import viewsets
+        from .serializers import CustomerSerializer
+        from .models import Customer
+        
+        @self.mcp_viewset()
+        class PrimaryKeyViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            serializer_class = CustomerSerializer
+            # Using default lookup_field which is 'pk'
+        
+        # Get retrieve tool
+        tools = registry.get_all_tools()
+        retrieve_tool = next(t for t in tools if t.action == 'retrieve')
+        
+        # Generate kwargs schema
+        kwargs_info = generate_kwargs_schema(retrieve_tool)
+        
+        # Should show the actual primary key field name (id) in description
+        pk_property = kwargs_info['schema']['properties']['pk']
+        self.assertEqual(pk_property['description'], 'The id of the resource')
+    
+    def test_partial_update_still_includes_partial_flag(self):
+        """Test that partial_update still includes the partial=True flag along with lookup."""
+        from rest_framework import viewsets
+        from .serializers import CustomerSerializer
+        from .models import Customer
+        
+        @self.mcp_viewset()
+        class PartialUpdateViewSet(viewsets.ModelViewSet):
+            queryset = Customer.objects.all()
+            serializer_class = CustomerSerializer
+            lookup_field = 'slug'
+        
+        # Get partial_update tool
+        tools = registry.get_all_tools()
+        partial_update_tool = next(t for t in tools if t.action == 'partial_update')
+        
+        # Generate kwargs schema
+        kwargs_info = generate_kwargs_schema(partial_update_tool)
+        
+        # Should have both slug and partial parameters
+        self.assertIsNotNone(kwargs_info['schema'])
+        self.assertTrue(kwargs_info['is_required'])
+        
+        properties = kwargs_info['schema']['properties']
+        self.assertIn('slug', properties)
+        self.assertIn('partial', properties)
+        
+        # Only slug should be required (partial has default)
+        self.assertEqual(kwargs_info['schema']['required'], ['slug'])
+        
+        # Partial should have default value
+        self.assertTrue(properties['partial']['default'])
+    
 
 
 if __name__ == '__main__':

@@ -38,17 +38,16 @@ class PostViewSet(viewsets.ModelViewSet):
 
     # DEMO: Register custom actions with no input
     @mcp_tool(
-        name='get_recent_posts',
-        title='Get Recent Posts',
-        description='Retrieves the 5 most recently created blog posts',
+        description="Reverses a Post's title and content",
         input_serializer=None
     )
-    @action(detail=False, methods=['get'])
-    def recent_posts(self, request):
-        # Returns the 5 most recently created posts
-        recent_posts = self.get_queryset().order_by('-created_at')[:5]
-        serializer = self.get_serializer(recent_posts, many=True)
-        return Response(serializer.data)
+    @action(detail=True, methods=['post'])
+    def reverse(self, request):
+        post = self.get_object()
+        post.title = post.title[::-1]
+        post.content = post.content[::-1]
+        post.save()
+        return Response(PostSerializer(post).data)
 
     # DEMO: Register custom actions with custom input
     # DEMO: Support for ListSerializers (array of objects) as input
@@ -61,3 +60,6 @@ class PostViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def bulk_create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
+    
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
