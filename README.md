@@ -92,7 +92,7 @@ Follow these instructions to use `mcp-remote` to connect to Claude Desktop:
 
 ### Custom Actions
 
-Custom actions (created with the `@action` decorator) require explicit schema definition since there aren't standard input defaults like with CRUD endpoints. To create a tool from a custom action, apply the `@mcp_tool` decorator and pass in an `input_serializer`:
+Custom actions, created with the `@action` decorator, require explicit schema definition since there aren't standard input defaults like with CRUD endpoints. To create a tool from a custom action, apply the `@mcp_tool` decorator and pass in an `input_serializer`:
 
 ```python
 from djangorestframework_mcp.decorators import mcp_viewset, mcp_tool
@@ -349,7 +349,7 @@ Class decorator for ViewSets that inherit from `GenericViewSet` to expose action
 
 #### `@mcp_tool(name=None, title=None, description=None, input_serializer=...)`
 
-Method decorator for individual ViewSet actions to customize their MCP exposure.
+Method decorator to register custom ViewSet actions and/or customize action MCP exposure. Custom actions (non-CRUD methods) must also be decorated with `@action`.
 
 **Parameters:**
 

@@ -77,19 +77,15 @@ def mcp_tool(name: Optional[str] = None, title: Optional[str] = None,
             def generate(self, request):
                 return Response({'result': 'generated'})
     """
-    # TODO: Do we need to check to make sure this is only being decorated on something that was decorated with @action?
-    # TODO: Is there a way to make sure this is only being decorated on views that have @mcp_viewset? Or no b/c that runs after?
-
     def decorator(func):
-        @wraps(func)
-        def wrapper(self, *args, **kwargs):
-            return func(self, *args, **kwargs)
+        # Store MCP metadata directly on the function (no wrapper)
+        # This is simpler and works better with @action decorator
+        func._mcp_tool_name = name
+        func._mcp_title = title
+        func._mcp_description = description
+        func._mcp_needs_registration = True
         
-        # Store MCP metadata on the function
-        wrapper._mcp_tool_name = name
-        wrapper._mcp_title = title
-        wrapper._mcp_description = description
-        wrapper._mcp_needs_registration = True
+        # Validation will happen during ViewSet registration to handle both decorator orders
         
         # Only store serializer attributes if they were explicitly provided
         if input_serializer is not ...:
@@ -101,8 +97,8 @@ def mcp_tool(name: Optional[str] = None, title: Optional[str] = None,
                         f"input_serializer for {func.__name__} must be a serializer class, not an instance."
                     )
             
-            wrapper._mcp_input_serializer = input_serializer
+            func._mcp_input_serializer = input_serializer
         
-        return wrapper
+        return func
     
     return decorator
