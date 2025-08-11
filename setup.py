@@ -1,8 +1,8 @@
 """Setup configuration for django-rest-framework-mcp."""
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
-with open("README.md", "r", encoding="utf-8") as fh:
+with open("README.md", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
@@ -40,10 +40,14 @@ setup(
             "pytest-django>=4.5.0",
             "pytest-cov>=4.0.0",
             "coverage>=6.0",
+            "ruff>=0.1.0",
+            "mypy>=1.0.0",
+            "django-stubs>=4.0.0",
+            "djangorestframework-stubs>=3.14.0",
         ],
         "test": [
             "pytest>=7.0.0",
-            "pytest-django>=4.5.0", 
+            "pytest-django>=4.5.0",
             "pytest-cov>=4.0.0",
             "coverage>=6.0",
         ],

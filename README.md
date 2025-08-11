@@ -459,6 +459,27 @@ python manage.py runserver
 # - MCP tools exposed at http://localhost:8000/mcp/
 ```
 
+#### 4. Code Quality Tools
+
+This project uses Ruff for linting/formatting and mypy for type checking:
+
+```bash
+# Format code (autofix)
+ruff format .
+
+# Check linting issues
+ruff check .
+
+# Fix auto-fixable linting issues
+ruff check --fix .
+
+# Type checking
+mypy djangorestframework_mcp
+
+# Run all three and fix any issues before committing
+ruff format . && ruff check . && mypy djangorestframework_mcp
+```
+
 ### New Feature Checklist
 
 If you are developing new features from the roadmap, first ensure you've thought through all of the below questions to ensure your implementation is robust, developer-friendly, and fully integrated with both DRF and MCP requirements.
@@ -476,3 +497,4 @@ And also ensure you attend to the following required housekeeping items to ensur
   - Regression tests (that ensure normal DRF API based requests continue to work)
 - Enhance the Demo application to leverage your new feature and document in the /demo/README.md
 - Update any other project documentation if needed, such as this README.md or CLAUDE.md files for any directories you made changes to.
+- Format all code, fix any linting issues, and fix any type hints before committing.
