@@ -66,25 +66,26 @@ def get_decimal_schema(field: serializers.DecimalField) -> Dict[str, Any]:
 
 
 def get_datetime_schema(field: serializers.DateTimeField) -> Dict[str, Any]:
-    schema = {'type': 'string'}
-    field_format = getattr(field, 'format', api_settings.DATETIME_FORMAT)
-    schema['format'] = 'date-time'
-    schema['description'] = f'DateTime in format: {field_format}'
+    schema = {'type': 'string', 'format': 'date-time'}
+    # Note: Unless overridden using to_representation (which we don't support yet) 
+    # DRF still expects input as ISO-8601 format even if `format` is set to something else
+    schema['description'] = 'DateTime in format: ISO-8601'
     return schema
 
 
 def get_date_schema(field: serializers.DateField) -> Dict[str, Any]:
-    schema = {'type': 'string'}    
-    field_format = getattr(field, 'format', api_settings.DATE_FORMAT)
-    schema['format'] = 'date'
-    schema['description'] = f'Date in format: {field_format}'
+    schema = {'type': 'string', 'format': 'date'}
+    # Note: Unless overridden using to_representation (which we don't support yet) 
+    # DRF still expects input as ISO-8601 format even if `format` is set to something else
+    schema['description'] = 'Date in format: ISO-8601'
     return schema
 
 
 def get_time_schema(field: serializers.TimeField) -> Dict[str, Any]:
     schema = {'type': 'string'}
-    field_format = getattr(field, 'format', api_settings.TIME_FORMAT)
-    schema['description'] = f'Time in format: {field_format}'
+    # Note: Unless overridden using to_representation (which we don't support yet) 
+    # DRF still expects input as ISO-8601 format even if `format` is set to something else
+    schema['description'] = 'Time in format: ISO-8601'
     return schema
 
 
