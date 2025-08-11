@@ -274,9 +274,9 @@ class CustomerViewSet(viewsets.ModelViewSet):
   - ✅ CRUD actions (list/retrieve/create/update/partial_update/destroy)
   - ✅ Custom actions (created with @action decorator)
 - ✅ Implements [MCP protocol](https://modelcontextprotocol.io/) for Initialization and Tools (discovery and invocation)
-  - _[Coming later: support for resources, prompts, notifications coming later]_
+  - _[Coming later: support for resources, prompts, notifications]_
 - ✅ HTTP transport via `/mcp` endpoint
-  - _[Coming later: sse & stdio coming later]_
+  - _[Coming later: sse & stdio]_
 - ✅ Auto-generated tool input/output schemas from DRF serializers and action method signatures
   - ✅ Required/optional inferred automatically
   - ✅ Constraints (min/max length, min/max value) inferred automatically
@@ -284,8 +284,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
   - ✅ Primitive types (string/int/float/bool/datetime/date/time/UUID)
   - ✅ Nested Serializers
   - ✅ ListSerializers
-  - ✅ Formatting inferred and passed back to MCP Client in description. (Example: Date format specified in `format` or `api_settings`)
-  - _[Coming later: advanced types]_
+  - ✅ Formatting inferred and passed back to MCP Client in description.
+  - _[Coming later: additional advanced types]_
 - ✅ Test utilities for MCP tools
 
 ### Future Roadmap
