@@ -282,7 +282,13 @@ class TestMCPView(unittest.TestCase):
         self.assertEqual(result, {"result": "success"})
         # Check that initial was called (part of the lifecycle)
         mock_viewset_instance.initial.assert_called_once()
+        
+        # Verify the action was called with a DRF Request object, not HttpRequest
         mock_action.assert_called_once()
+        call_args = mock_action.call_args
+        request_arg = call_args[0][0]  # First positional argument
+        from rest_framework.request import Request
+        self.assertIsInstance(request_arg, Request, "Action should receive DRF Request, not HttpRequest")
 
 
 class TestMCPViewCSRF(unittest.TestCase):
