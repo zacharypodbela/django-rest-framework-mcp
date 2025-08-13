@@ -177,3 +177,53 @@ We considered a flat schema where all parameters are at the top level:
 - Have to leverage the functions that generated the schema to understand which parameters go where
 - Parameter name conflicts between sources
 - Less maintainable as input sources grow
+
+# Q: Why are we reimplementing the DRF lifecycle (dispatch) in execute_tool?
+
+## The Problem: We need to abide by DRF interface contracts
+
+Initially, we were bypassing DRF's request lifecycle entirely - directly calling ViewSet action methods with raw Django HttpRequest objects. This broke DRF's contracts:
+
+1. Actions expect `rest_framework.requests.Request` objects, not Django's HttpRequest
+2. authentication, permissions, throttles, versioning, content_negotiation were being skipped
+3. Custom `initial()`, `initialize_request()`, `handle_exception()`, or `finalize_response()` logic was bypassed
+
+That being said, some parts of the lifecycle doesn't make sense for MCP:
+
+- Content negotiation and Renderers aren't relevant since MCP/JSON-RPC dictates the input and output format.
+- Processing headers for incoming requests / adding headers to responses
+
+## Our Architectural Decision: A differentiated version of dispatch built for MCP
+
+Replicate what `dispatch()` does -- specialized for MCP, but keeping as much of the lifecycle contract developers have come to expect as possible to minimize compatibility issues and unexpected behavior.
+
+Parts of the lifecycle that will be run:
+
+- `initial` will be run. If your view does not override this function or calls `super().initial`, this will include running `perform_authentication`, `check_permissions`, `check_throttles`, and `determine_version`. While `perform_content_negotiation` would also be run, the `Request` object will not have `negotiator` or `parsers` set (so this function should do nothing).
+
+Parts of the lifecycle that will be skipped:
+
+- `initialize_request` will not be run. We will create a `rest_framework.requests.Request` from the `django.http.HttpRequest`, but not using this handler.
+- `finalize_response` will not be run.
+- `handle_exception` will not be run in the event of an exception\*.
+- (If your view overrides `dispatch`, keep in mind this function will also not run.)
+
+- **\*NOTE:** It's hard to say whether `handle_exception` should or shouldn't be leveraged for MCP requests as it has a lot to do with what the developer is using that handler for. If developers are formatting the error response, we wouldn't want this to run (b/c the protocols define how errors should be formatted). If developers are running logging or business logic, ideally we would want this to run. For now, we're not going to run it, but if we encounter a lot of feedback from developers who need it to run, we can make this a configurable setting that defaults to `False`.
+
+### Differences in Request properties
+
+As a consequence of the `django.http.HttpRequest` and `rest_framework.requests.Request` not being initialized via an incoming API call, it will be missing several API specific properties including `method`, `path`, and `path_info`.
+
+## Why This Design?
+
+- No need to work backwards into "faking" the HTTP methods, which added complexity and makes it much harder to understand what's actually going on.
+- In the future we can further customize the lifecycle for MCP-specific needs. Ex: skip content negotiation since MCP/JSON-RPC dictates the output format.
+
+### Acknowledged Downsides
+
+- In future versions of DRF, if the implementation of `dispatch` is changed and the contract between the framework and the `APIView` methods changes, we'll need to update our implementation to match.
+- By skipping the parts of the lifecycle that aren't relevant to MCP, we may be skipping logic that developers are relying on to run in order for the view actions to function properly. This might mean some more unconventional or complex use cases won't be supported to start or developers will need to put in extra effort to re-work their ViewSets to be compatible with our framework.
+
+## Alternative Considered: Just pass the request into the ViewSet's dispatch
+
+Call `viewset_class.as_view({'post': 'create'})` and fake the HTTP method to match what the action expects. Then let the ViewSet handle the request _as if_ it was an APIRequest.

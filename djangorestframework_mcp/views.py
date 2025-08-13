@@ -3,10 +3,12 @@
 import json
 from typing import Any, Dict, Optional
 
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.request import Request
+from rest_framework.parsers import JSONParser
 
 from .registry import registry
 from .schema import generate_tool_schema
@@ -144,37 +146,60 @@ class MCPView(View):
             }
         )
 
-    def execute_tool(self, request, tool: MCPTool, params: Dict[str, Any]) -> Any:
-        """Execute a tool using the structured kwargs+body parameter format."""
+    def execute_tool(self, _request, tool: MCPTool, params: Dict[str, Any]) -> Any:
+        """Execute a tool using the structured kwargs+body parameter format.
+        
+        This method manually calls DRF lifecycle methods to ensure proper
+        request handling while avoiding HTTP method semantics since MCP is RPC-based.
+        """
         viewset_class = tool.viewset_class
         action = tool.action
 
-        # Create ViewSet instance with proper DRF setup
+        # Create ViewSet instance
         viewset = viewset_class()
-
-        # Set up the request context properly
-        viewset.request = request
-        viewset.action = action
-        viewset.format_kwarg = None
-        viewset.args = ()
-
-        # Mark request as coming from MCP
-        request.is_mcp_request = True
 
         # Extract structured parameters
         method_kwargs = params.get("kwargs", {})
         body_data = params.get("body", {})
 
-        # Set up ViewSet kwargs from method_kwargs
+        # Create a new HttpRequest that represents the equivalent API call
+        body_bytes = json.dumps(body_data).encode('utf-8') if body_data else b'{}'
+        request = HttpRequest()
+        request.META = {
+            'CONTENT_TYPE': 'application/json',
+            'CONTENT_LENGTH': str(len(body_bytes))
+        }
+        request._body = body_bytes
+        request._read_started = True  # We aren't creating a proper stream. Marking it as started tells the parser it does not need to read it as a stream.
+
+        # Replicate what `rest_framework.views.APIView.dispatch` does during a normal API Request, but specialized for MCP.
+
+        # Step 1: Initialize request - converts HttpRequest to DRF Request
+        # Based on the implementation of `rest_framework.views.APIView.initialize_request`
+        # but without parsers or content negotiation since those don't apply to MCP Request.
+        request = Request(
+            request,
+            parsers=[JSONParser()],  # MCP always uses JSON
+            authenticators=viewset.get_authenticators(),
+        )
+        viewset.action = action  # From `rest_framework.viewsets.ViewSetMixin.initialize_request`
+
+        # Mark request as coming from MCP
+        request.is_mcp_request = True
+
+        # Step 2: Set up ViewSet context
+        viewset.args = ()
         viewset.kwargs = method_kwargs.copy()
+        viewset.headers = {}  # In the future, this will be passed in via a headers param.
+        viewset.request = request 
+        
+        # Step 3: Call `initial` to do authentication, permissions, throttling
+        viewset.initial(request, *viewset.args, **viewset.kwargs)
 
-        # Set up request data from body
-        request.data = body_data
-
-        # Get the method dynamically and call it
+        # Step 4: Get and call the action method directly
         if not hasattr(viewset, action):
             raise ValueError(f"ViewSet does not support action: {action}")
-
+        
         action_method = getattr(viewset, action)
         response = action_method(request, **method_kwargs)
 

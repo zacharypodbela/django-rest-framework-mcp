@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Optional, Type
 
-from rest_framework.viewsets import ViewSetMixin
+from rest_framework.viewsets import GenericViewSet
 
 
 @dataclass
@@ -16,7 +16,7 @@ class MCPTool:
     """
 
     name: str
-    viewset_class: Type[ViewSetMixin]
+    viewset_class: Type[GenericViewSet]
     action: str
     title: Optional[str] = None
     description: Optional[str] = None
