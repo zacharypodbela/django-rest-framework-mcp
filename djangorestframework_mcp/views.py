@@ -35,15 +35,15 @@ class MCPView(View):
 
             # Route to appropriate handler
             if method == "initialize":
-                result = self.handle_initialize(params)
+                result = self.handle_initialize()
             elif method == "notifications/initialized":
                 # Sent by the client to acknowledge the receipt of our response to its initialize handshake
                 # No response is expected
                 return HttpResponse(status=204)  # No Content
             elif method == "tools/list":
-                result = self.handle_tools_list(params)
+                result = self.handle_tools_list()
             elif method == "tools/call":
-                result = self.handle_tools_call(request, params)
+                result = self.handle_tools_call(params)
             else:
                 # Method not found
                 return self.error_response(
@@ -62,7 +62,7 @@ class MCPView(View):
                 f"Internal error: {str(e)}",
             )
 
-    def handle_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_initialize(self) -> Dict[str, Any]:
         """Handle initialize request."""
         # The only capabilities we currently support are tool calling (without listChanged notifications)
         return {
@@ -71,7 +71,7 @@ class MCPView(View):
             "serverInfo": {"name": "django-rest-framework-mcp", "version": "0.1.0"},
         }
 
-    def handle_tools_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_tools_list(self) -> Dict[str, Any]:
         """Handle tools/list request."""
         tools = []
 
@@ -92,7 +92,7 @@ class MCPView(View):
 
         return {"tools": tools}
 
-    def handle_tools_call(self, request, params: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle tools/call request."""
         tool_name = params.get("name")
         tool_params = params.get("arguments", {})
@@ -107,7 +107,7 @@ class MCPView(View):
                 raise Exception(f"Tool not found: {tool_name}")
 
             # Execute the tool
-            result = self.execute_tool(request, tool, tool_params)
+            result = self.execute_tool(tool, tool_params)
 
             # Per latest MCP specification (2025-06-18), JSON should be returned in both
             # structured content and as stringified text content (the latter for backwards compatibility)
@@ -146,7 +146,7 @@ class MCPView(View):
             }
         )
 
-    def execute_tool(self, _request, tool: MCPTool, params: Dict[str, Any]) -> Any:
+    def execute_tool(self, tool: MCPTool, params: Dict[str, Any]) -> Any:
         """Execute a tool using the structured kwargs+body parameter format.
 
         This method manually calls DRF lifecycle methods to ensure proper

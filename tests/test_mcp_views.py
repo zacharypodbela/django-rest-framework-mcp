@@ -21,9 +21,7 @@ class TestMCPView(unittest.TestCase):
 
     def test_handle_initialize(self):
         """Test initialize request handling."""
-        params = {"clientInfo": {"name": "test-client", "version": "1.0"}}
-
-        result = self.view.handle_initialize(params)
+        result = self.view.handle_initialize()
 
         self.assertEqual(result["protocolVersion"], "2025-06-18")
         self.assertIn("capabilities", result)
@@ -51,7 +49,7 @@ class TestMCPView(unittest.TestCase):
         }
         mock_generate_schema.return_value = mock_schema
 
-        result = self.view.handle_tools_list({})
+        result = self.view.handle_tools_list()
 
         self.assertIn("tools", result)
         self.assertEqual(len(result["tools"]), 1)
@@ -80,7 +78,7 @@ class TestMCPView(unittest.TestCase):
         ) as mock_execute:
             params = {"name": "test_tool", "arguments": {"param1": "value1"}}
 
-            result = self.view.handle_tools_call(Mock(), params)
+            result = self.view.handle_tools_call(params)
 
             self.assertIn("content", result)
             self.assertEqual(len(result["content"]), 1)
@@ -101,7 +99,7 @@ class TestMCPView(unittest.TestCase):
 
         params = {"name": "nonexistent_tool", "arguments": {}}
 
-        result = self.view.handle_tools_call(Mock(), params)
+        result = self.view.handle_tools_call(params)
 
         self.assertIn("content", result)
         self.assertTrue(result["isError"])
@@ -122,7 +120,7 @@ class TestMCPView(unittest.TestCase):
         ):
             params = {"name": "test_tool", "arguments": {}}
 
-            result = self.view.handle_tools_call(Mock(), params)
+            result = self.view.handle_tools_call(params)
 
             self.assertIn("content", result)
             self.assertTrue(result["isError"])
@@ -251,8 +249,6 @@ class TestMCPView(unittest.TestCase):
 
     def test_execute_tool(self):
         """Test execute_tool method."""
-        from django.test import RequestFactory
-
         # Mock the ViewSet class and action
         mock_viewset_class = Mock()
         mock_viewset_instance = Mock()
@@ -273,11 +269,7 @@ class TestMCPView(unittest.TestCase):
         )
         params = {}
 
-        # Use RequestFactory to create a real HttpRequest
-        factory = RequestFactory()
-        request = factory.post("/mcp/", content_type="application/json")
-
-        result = self.view.execute_tool(request, tool, params)
+        result = self.view.execute_tool(tool, params)
 
         self.assertEqual(result, {"result": "success"})
         # Check that initial was called (part of the lifecycle)
