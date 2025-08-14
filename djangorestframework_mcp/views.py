@@ -68,7 +68,7 @@ class MCPView(View):
         return {
             "protocolVersion": "2025-06-18",
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "django-rest-framework-mcp", "version": "0.1.0"},
+            "serverInfo": {"name": "django-rest-framework-mcp", "version": "0.1.0a2"},
         }
 
     def handle_tools_list(self) -> Dict[str, Any]:
