@@ -28,7 +28,7 @@ class TestMCPView(unittest.TestCase):
         self.assertIn("tools", result["capabilities"])
         self.assertIn("serverInfo", result)
         self.assertEqual(result["serverInfo"]["name"], "django-rest-framework-mcp")
-        self.assertEqual(result["serverInfo"]["version"], "0.1.0")
+        self.assertEqual(result["serverInfo"]["version"], "0.1.0a2")
 
     @patch("djangorestframework_mcp.views.registry")
     @patch("djangorestframework_mcp.views.generate_tool_schema")
