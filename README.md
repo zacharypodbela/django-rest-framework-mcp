@@ -232,12 +232,6 @@ class CustomerViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_active=True)
 
         return queryset
-
-    def get_serializer_class(self, request):
-        # Use a simplified serializer for MCP clients
-        if request.is_mcp_request:
-            return CustomerMCPSerializer
-        return CustomerSerializer
 ```
 
 ## Testing Your MCP Tools
