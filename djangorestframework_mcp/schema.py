@@ -300,7 +300,7 @@ def generate_kwargs_schema(tool: MCPTool) -> Dict[str, Any]:
         if lookup_field == "pk":
             # Try to get the actual primary key field name from the model
             try:
-                lookup_field_name = viewset_class.queryset.model._meta.pk.name
+                lookup_field_name = viewset_class.queryset.model._meta.pk.name  # type: ignore[union-attr]
             except Exception:
                 # Fallback if we can't determine the pk field from the model
                 # NOTE: This is really not ideal though. In the future we might consider stronger enforcement of requirements
@@ -310,7 +310,7 @@ def generate_kwargs_schema(tool: MCPTool) -> Dict[str, Any]:
         # Attempt to fetch the name of the resource (if possible) to further improve description
         resource_name = "resource"
         try:
-            resource_name = viewset_class.queryset.model._meta.object_name.lower()
+            resource_name = viewset_class.queryset.model._meta.object_name.lower()  # type: ignore[union-attr]
         except Exception:
             pass
 
