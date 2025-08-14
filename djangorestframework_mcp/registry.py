@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional, Type
 
-from rest_framework.viewsets import ViewSetMixin
+from rest_framework.viewsets import GenericViewSet
 
 from .types import MCPTool
 
@@ -17,7 +17,7 @@ class MCPRegistry:
 
     def register_viewset(
         self,
-        viewset_class: Type[ViewSetMixin],
+        viewset_class: Type[GenericViewSet],
         actions: Optional[List[str]] = None,
         base_name: Optional[str] = None,
     ):
@@ -26,7 +26,7 @@ class MCPRegistry:
             # Generate base name from queryset model (if one exists) or viewset class
             base_name = viewset_class.__name__.replace("ViewSet", "").lower()
             try:
-                base_name = viewset_class.queryset.model._meta.object_name.lower() + "s"
+                base_name = viewset_class.queryset.model._meta.object_name.lower() + "s"  # type: ignore[union-attr]
             except (AttributeError, TypeError):
                 pass
 
@@ -108,7 +108,9 @@ class MCPRegistry:
         """Get all registered MCP tools."""
         return list(self._tools.values())
 
-    def _get_registerable_actions(self, viewset_class: Type[ViewSetMixin]) -> List[str]:
+    def _get_registerable_actions(
+        self, viewset_class: Type[GenericViewSet]
+    ) -> List[str]:
         """
         Get actions that should be registered as MCP tools.
 

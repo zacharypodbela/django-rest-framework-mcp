@@ -252,12 +252,12 @@ class TestMCPView(unittest.TestCase):
     def test_execute_tool(self):
         """Test execute_tool method."""
         from django.test import RequestFactory
-        
+
         # Mock the ViewSet class and action
         mock_viewset_class = Mock()
         mock_viewset_instance = Mock()
         mock_viewset_class.return_value = mock_viewset_instance
-        
+
         # Mock the required ViewSet methods
         mock_viewset_instance.get_authenticators = Mock(return_value=[])
         mock_viewset_instance.initial = Mock()
@@ -275,20 +275,23 @@ class TestMCPView(unittest.TestCase):
 
         # Use RequestFactory to create a real HttpRequest
         factory = RequestFactory()
-        request = factory.post('/mcp/', content_type='application/json')
-        
+        request = factory.post("/mcp/", content_type="application/json")
+
         result = self.view.execute_tool(request, tool, params)
 
         self.assertEqual(result, {"result": "success"})
         # Check that initial was called (part of the lifecycle)
         mock_viewset_instance.initial.assert_called_once()
-        
+
         # Verify the action was called with a DRF Request object, not HttpRequest
         mock_action.assert_called_once()
         call_args = mock_action.call_args
         request_arg = call_args[0][0]  # First positional argument
         from rest_framework.request import Request
-        self.assertIsInstance(request_arg, Request, "Action should receive DRF Request, not HttpRequest")
+
+        self.assertIsInstance(
+            request_arg, Request, "Action should receive DRF Request, not HttpRequest"
+        )
 
 
 class TestMCPViewCSRF(unittest.TestCase):
