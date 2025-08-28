@@ -67,20 +67,26 @@ For each tool the library automatically:
 
 MCP requests do not go through the full DRF request lifecycle.
 
-View lifecycle methods that will be called:
+**View lifecycle methods that will be called:**
 
-- **`initial(request, args, kwargs)`** will be called.
-  - If your view runs the default implementation in `APIView` (either by not overriding this function or calling `super().initial`), this includes calling `perform_authentication`, `check_permissions`, `check_throttles`, and `determine_version`.
-  - While `perform_content_negotiation` would also be called, the `Request` object will not have a `negotiator` and the only value for `parsers` will be `JSONParser()` since MCP/JSON-RPC dictates the input and output format.
+- **`perform_authentication(request)`** - Called unless `BYPASS_VIEWSET_AUTHENTICATION = True`
+- **`check_permissions(request)`** - Called unless `BYPASS_VIEWSET_PERMISSIONS = True`  
+- **`check_throttles(request)`** - Always called (no bypass option)
+- **`determine_version(request, *args, **kwargs)`** - Always called to set request versioning
 
-View lifecycle methods that won't be called:
+**View lifecycle methods that won't be called:**
 
-- **`dispatch(request, args, kwargs)`** will not be called.
+- **`dispatch(request, args, kwargs)`** - will not be called since we don't use HTTP method+path routing.
 - **`initialize_request(request, args, kwargs)`** will not be called. We do create a `rest_framework.requests.Request` from the `django.http.HttpRequest`, but not using this handler.
+- **`initial(request, args, kwargs)`** - will not be called.
+- **`perform_content_negotiation(request)`** - will not be called since MCP/JSON-RPC dictates the input and output format.
 - **`finalize_response(request, response, args, kwargs)`** will not be called.
 - **`handle_exception(exc)`** will not be called in the event of an exception\*.
 
-In addition, since the `request` was not the result of an incoming API call, it will be missing any API specific properties, such as `method`, `path`, or `path_info`.
+**Additional considerations:**
+
+- The `request` object will be missing API-specific properties like `method`, `path`, or `path_info` since it wasn't created from an actual HTTP API call
+- Content negotiation is bypassed since MCP always uses JSON
 
 ## Connecting a STDIO MCP Client
 
