@@ -337,6 +337,25 @@ class CustomerViewSet(viewsets.ModelViewSet):
         return queryset
 ```
 
+### Array Inputs
+
+For endpoints that accept arrays of data (like bulk operations), create a `ListSerializer` subclass and use it as your `input_serializer`:
+
+```python
+class CustomerListSerializer(serializers.ListSerializer):
+    child = CustomerSerializer()
+
+@mcp_viewset()
+class CustomerViewSet(viewsets.ModelViewSet):
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer
+
+    @mcp_tool(input_serializer=CustomerListSerializer)
+    @action(detail=False, methods=['post'])
+    def bulk_create(self, request):
+      # ... request.data will be an array of Posts
+```
+
 ## Testing Your MCP Tools
 
 The library provides test utilities to verify your MCP tools work correctly:
@@ -368,24 +387,9 @@ class CustomerMCPTests(TestCase):
         self.assertIn('Body is required', result['content'][0]['text'])
 ```
 
-### Array Inputs
+### Authentication in Tests
 
-For endpoints that accept arrays of data (like bulk operations), create a `ListSerializer` subclass and use it as your `input_serializer`:
-
-```python
-class CustomerListSerializer(serializers.ListSerializer):
-    child = CustomerSerializer()
-
-@mcp_viewset()
-class CustomerViewSet(viewsets.ModelViewSet):
-    queryset = Customer.objects.all()
-    serializer_class = CustomerSerializer
-
-    @mcp_tool(input_serializer=CustomerListSerializer)
-    @action(detail=False, methods=['post'])
-    def bulk_create(self, request):
-      # ... request.data will be an array of Posts
-```
+`MCPClient` inherits from Django's `django.test.Client`, so all normal helper methods for authentication like `login()`, `force_login()`, and setting default headers are available to authenticate your MCP calls.
 
 ## Roadmap
 
