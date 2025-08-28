@@ -1,4 +1,59 @@
-You can find instructions on how to start and use this app in the root README.
+## Setup
+
+The first time you clone this repo, you'll need to do a few additional steps to set things up.
+
+1. Run migrations
+
+```bash
+python manage.py migrate
+```
+
+2. (Optional) Create at admin user
+
+Admin users allow you to log into and leverage Django's Admin interface to easily create and modify data in the database, which can be useful for setting up testing scenarios and debugging.
+
+```bash
+python manage.py createsuperuser  # Creates admin user
+```
+
+3. (Optional) Generate instructions on how to authenticate from your MCP Client
+
+NOTE: If you want to test Token based authentication this step is required.
+
+```bash
+# Then set up MCP authentication for that user
+python manage.py setup_test_auth testuser testpass123
+```
+
+This command will:
+
+- Find an existing user or create a new one with the specified credentials
+- Generate an auth token for the user
+- Display comprehensive test instructions including curl examples
+
+## Run the App
+
+```bash
+# Run the demo application
+cd demo
+python manage.py runserver
+
+# The demo app provides:
+# - Django Rest Admin interface at http://localhost:8000/
+# - Admin interface at http://localhost:8000/admin/
+# - MCP tools exposed at http://localhost:8000/mcp/
+```
+
+### Disabling Authentication
+
+If you want to test without authentication, simply comment out the `DEFAULT_PERMISSION_CLASSES` in `demo/settings.py`:
+
+```python
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [...],
+    # "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+}
+```
 
 ## Demo Features
 
@@ -19,3 +74,4 @@ You can find instructions on how to start and use this app in the root README.
 | **Help Text and Labels**                      | `blog/models.py:19`, `blog/serializers.py:28-29`    | All fields include descriptive `help_text` and `label` to pass additional context to MCP client                                          |
 | **Nested Serializers**                        | `blog/serializers.py:87-184`                        | `OrderSerializer` accepts nested `OrderItemSerializer` objects in single create request                                                  |
 | **Required vs Optional Fields**               | `blog/serializers.py:120-142`                       | Info on Required fields (`customer_name`, `items`) vs optional fields (`notes`) is passed to MCP Client                                  |
+| **ViewSet Defined Authentication**            | `demo/settings.py:129-139`                          | All ViewSets require authentication via Token, Session, or Basic auth - demonstrates how MCP can leverage existing API authentication    |

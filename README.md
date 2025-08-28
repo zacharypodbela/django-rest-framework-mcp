@@ -116,6 +116,109 @@ Follow these instructions to use `mcp-remote` to connect to Claude Desktop:
 
 ## Advanced Configuration
 
+### Authentication
+
+On the subject of Authentication, the Model Context Protocol states:
+
+1. Implementations using an HTTP-based transport SHOULD conform to the OAuth specification detailed [here](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#authorization-flow).
+2. Implementations using an STDIO transport SHOULD NOT follow the above specification, and instead retrieve credentials from the environment.
+3. Additionally, clients and servers MAY negotiate their own custom authentication and authorization strategies.
+
+Our library enables you to leverage the DRF authentication and permissions frameworks, by applying existing `BaseAuthentication` and `BasePermission` classes implemented on your ViewSets to MCP requests or configuring `BaseAuthentication` and `BasePermission` classes directly on the `MCPView`. This flexibility enables developers to quickly retrofit existing APIs into MCP tools or install and leverage different authentication methods for MCP clients (such as an OAuth package if they want to conform to the "suggested" MCP standards).
+
+#### Using Existing API Authentication
+
+If your ViewSet specifies any `authentication_classes` and `permission_classes`, MCP Clients can be required to authenticate using the same methods as your normal API requests:
+
+```python
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import IsAuthenticated
+
+@mcp_viewset()
+class CustomerViewSet(viewsets.ModelViewSet):
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+```
+
+MCP clients then authenticate via standard HTTP headers:
+
+```bash
+# HTTP headers
+POST /mcp/ HTTP/1.1
+Authorization: Token your-token-here
+
+# HTTP body
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "list_customers",
+    "arguments": {}
+  },
+  "id": 1
+}
+```
+
+#### Defining Authentication on the MCPView
+
+`BaseAuthentication` and `BasePermission` classes can also be used to require authentication and check permissions on the `/mcp` endpoint itself by subclassing MCPView:
+
+```python
+from djangorestframework_mcp.views import MCPView
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import IsAuthenticated
+
+class AuthenticatedMCPView(MCPView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+# Then in urls.py
+urlpatterns = [
+    path('mcp/', AuthenticatedMCPView.as_view()),
+]
+```
+
+In cases where you want to have different authentication methods run on your `/mcp` endpoint and don't want to leverage the classes defined on your API ViewSets, you can bypass the authentication and/or permissions of the ViewSets:
+
+```python
+# settings.py
+DJANGORESTFRAMEWORK_MCP = {
+    'BYPASS_VIEWSET_AUTHENTICATION': True,  # Skip any authentication implemented in the ViewSet
+    'BYPASS_VIEWSET_PERMISSIONS': True,  # Skip any permissions implemented in the ViewSet
+}
+```
+
+#### Authenticating STDIO Transport (Using MCP-Remote)
+
+When using STDIO transport through MCP-Remote, authentication credentials to be passed as HTTP headers can be set as environment variables like this:
+
+```json
+{
+  "mcpServers": {
+    "my-django-mcp": {
+      "command": "node",
+      "args": [
+        "path/to/mcp-remote",
+        "http://localhost:8000/mcp/",
+        "--transport",
+        "http-only",
+        "--header",
+        "${AUTH_HEADER}" // Some setups don't escape whitespaces of args, so we recommend setting the entire header as an env var
+      ],
+      "env": {
+        "AUTH_HEADER": "Authorization: your-header-here"
+      }
+    }
+  }
+}
+```
+
+#### Authentication Error Handling
+
+When authentication fails, the library returns proper HTTP status codes (401/403) and WWW-Authenticate headers for HTTP-level compliance. The JSON-RPC response body also includes this information in the error.data field so MCP clients can programmatically access authentication requirements.
+
 ### Custom Actions
 
 Custom actions, created with the `@action` decorator, require explicit schema definition since there aren't standard input defaults like with CRUD endpoints. To create a tool from a custom action, apply the `@mcp_tool` decorator and pass in an `input_serializer`:
@@ -307,6 +410,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
   - ✅ Formatting inferred and passed back to MCP Client as part of field description.
   - _[Coming later: additional advanced types]_
 - ✅ Test utilities for MCP tools
+- ✅ Authentication
 
 ### Future Roadmap
 
@@ -344,7 +448,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
 - Non-JSON Inputs (FormParser/MultiPartParser/FileUploadParser) [Not sure if this is even possible]
 
-- Built-in /mcp auth via OAuth2
+- Advertising custom headers, kwargs to MCP Clients
 
 - Standalone stdio MCP server
 
@@ -463,19 +567,7 @@ pytest -v
 
 #### 3. Manual Testing
 
-Use the demo Django application for manual testing and smoke testing with your own MCP Client.
-
-```bash
-# Run the demo application
-cd demo
-python manage.py migrate # Only need to run the first time you want to run the app.
-python manage.py runserver
-
-# The demo app provides:
-# - Django Rest Admin interface at http://localhost:8000/
-# - Admin interface at http://localhost:8000/admin/
-# - MCP tools exposed at http://localhost:8000/mcp/
-```
+Use the demo Django application located in `/demo` for manual testing with your own MCP Client. You'll find more detail instructions on how to run and set up this application in the `/demo/README.md`.
 
 #### 4. Code Quality Tools
 
