@@ -75,6 +75,9 @@ class JsonRpcProtocolComplianceTests(TestCase):
             mock_viewset_instance = Mock()
             mock_viewset_class.return_value = mock_viewset_instance
 
+            # Mock the required ViewSet methods
+            mock_viewset_instance.determine_version = Mock(return_value=(None, None))
+
             # Mock the action method to return a successful response
             mock_response = Mock()
             mock_response.data = {"data": "test_data"}
