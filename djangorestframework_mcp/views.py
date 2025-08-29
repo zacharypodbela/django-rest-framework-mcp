@@ -294,6 +294,14 @@ class MCPView(View):
             parsers=[JSONParser()],  # MCP always uses JSON
             authenticators=authenticators,
         )
+
+        # If bypassing ViewSet auth, carry over auth info in case where user was authenticated at MCP endpoint
+        if bypass_viewset_auth:
+            if hasattr(request, "user"):
+                drf_request.user = request.user
+            if hasattr(request, "auth"):
+                drf_request.auth = request.auth
+
         # From `rest_framework.viewsets.ViewSetMixin.initialize_request`:
         viewset.action = action
 

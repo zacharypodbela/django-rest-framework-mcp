@@ -1481,6 +1481,83 @@ class MixedAuthenticationTests(TestCase):
             "You do not have permission to perform this action", str(context.exception)
         )
 
+    def test_bypass_auth_permissions_with_mcp_endpoint_auth(self):
+        """Test BYPASS_VIEWSET_AUTHENTICATION + IsAuthenticated permissions with authenticated MCP endpoint."""
+        # This tests the key scenario: 
+        # - Authentication happens at MCP endpoint level
+        # - BYPASS_VIEWSET_AUTHENTICATION = True (ViewSet auth is skipped)  
+        # - BYPASS_VIEWSET_PERMISSIONS = False (ViewSet permissions still enforced)
+        # - ViewSet has IsAuthenticated permission
+        # - User context should be preserved from endpoint auth to ViewSet permissions
+        
+        # ViewSet with authentication that will be bypassed but permissions enforced
+        @mcp_viewset()
+        class BypassAuthPermViewSet(viewsets.GenericViewSet):
+            authentication_classes = [TokenAuthentication]  # This will be bypassed
+            permission_classes = [IsAuthenticated]  # This should work with preserved user context
+
+            def list(self, request):
+                return Response([{"id": 1, "name": "Bypass auth test", "user": request.user.username}])
+
+        # Create a custom authenticated MCP endpoint like the demo app
+        from djangorestframework_mcp.views import MCPView
+        
+        class AuthenticatedMCPView(MCPView):
+            authentication_classes = [TokenAuthentication]
+            
+            def has_mcp_permission(self, request):
+                return request.user.is_authenticated
+        
+        # Test using Django's test client directly with the authenticated MCP view
+        from django.test import Client
+        
+        client = Client()
+        view = AuthenticatedMCPView.as_view()
+        
+        # Test the scenario with proper token authentication
+        request_data = {
+            "jsonrpc": "2.0",
+            "method": "tools/call", 
+            "params": {"name": "list_bypassauthperm", "arguments": {}},
+            "id": 1,
+        }
+        
+        response = client.post(
+            "/mcp/",  # We'll override the view
+            data=json.dumps(request_data),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Token {self.token.key}"
+        )
+        
+        # Manually invoke our authenticated view instead
+        from django.http import HttpRequest
+        import io
+        
+        request = HttpRequest()
+        request.method = 'POST'
+        request.content_type = 'application/json'
+        request.META['CONTENT_TYPE'] = 'application/json'
+        request.META['HTTP_AUTHORIZATION'] = f'Token {self.token.key}'
+        request._body = json.dumps(request_data).encode()
+        request._read_started = True
+        
+        # Process the request with our authenticated MCP view
+        response = view(request)
+        response_data = json.loads(response.content)
+        
+        # Should succeed because:
+        # 1. MCP endpoint authenticates the user via token
+        # 2. ViewSet auth is bypassed but user context is preserved  
+        # 3. IsAuthenticated permission passes with the authenticated user
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("result", response_data)
+        self.assertFalse(response_data["result"].get("isError", False))
+        
+        if "structuredContent" in response_data["result"]:
+            data = response_data["result"]["structuredContent"][0]
+            self.assertEqual(data["name"], "Bypass auth test")
+            self.assertEqual(data["user"], "testuser")
+
     def test_custom_permission_logic_with_bypassed_auth(self):
         """Test that custom permission logic works correctly when auth is bypassed."""
         from rest_framework.permissions import BasePermission

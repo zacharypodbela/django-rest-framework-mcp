@@ -558,10 +558,19 @@ class BypassPermissionsRegressionTests(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+@override_settings(DJANGORESTFRAMEWORK_MCP={"BYPASS_VIEWSET_AUTHENTICATION": False})
 class AuthenticationMiddlewareCompatibilityTests(TestCase):
     """Test compatibility with Django authentication middleware."""
 
     def setUp(self):
+        # Clear and register the test ViewSets
+        from djangorestframework_mcp.registry import registry
+        from tests.views import AuthenticatedViewSet, MultipleAuthViewSet
+        
+        registry.clear()
+        registry.register_viewset(AuthenticatedViewSet)  
+        registry.register_viewset(MultipleAuthViewSet)
+        
         self.user = User.objects.create_user(
             "middleware", "middleware@example.com", "middlewarepass"
         )
