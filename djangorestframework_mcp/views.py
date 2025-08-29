@@ -1,14 +1,16 @@
 """MCP HTTP endpoint views."""
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import exceptions
+from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import JSONParser
+from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 
 from .registry import registry
@@ -21,11 +23,9 @@ from .types import MCPTool
 class MCPView(View):
     """Main MCP HTTP endpoint handler."""
 
-    # Authentication and permission settings for the MCP endpoint itself
-    # By default, no authentication required at MCP endpoint level
-    # Authentication should be handled at ViewSet level
-    authentication_classes: list = []
-    permission_classes: list = []
+    # Override the definition of these to enforce authentication and permission on the MCP endpoint
+    authentication_classes: list[Type[BaseAuthentication]] = []
+    permission_classes: list[Type[BasePermission]] = []
 
     def post(self, request):
         """Handle MCP requests."""
@@ -37,9 +37,6 @@ class MCPView(View):
             method = body.get("method")
             params = body.get("params", {})
             request_id = body.get("id")
-
-            # Mark this as an MCP request
-            request.is_mcp_request = True
 
             # Perform authentication and permission checks for the MCP endpoint
             self.perform_mcp_authentication(request)
@@ -67,7 +64,11 @@ class MCPView(View):
 
         except json.JSONDecodeError:
             return self.error_response(None, -32700, "Parse error")
-        except (exceptions.NotAuthenticated, exceptions.PermissionDenied) as exc:
+        except (
+            exceptions.NotAuthenticated,
+            exceptions.AuthenticationFailed,
+            exceptions.PermissionDenied,
+        ) as exc:
             return self.handle_auth_error(
                 exc, body.get("id") if "body" in locals() else None
             )
@@ -155,18 +156,6 @@ class MCPView(View):
                 "isError": True,
             }
 
-    def get_authenticate_header(self, request: HttpRequest) -> Optional[str]:
-        """
-        If a request is unauthenticated, determine the WWW-Authenticate
-        header to use for 401 responses, if any.
-        """
-        authenticators = [auth() for auth in self.authentication_classes]
-        if authenticators:
-            # Convert HttpRequest to DRF Request for the header method
-            drf_request = Request(request, parsers=[JSONParser()])
-            return authenticators[0].authenticate_header(drf_request)
-        return None
-
     def perform_mcp_authentication(self, request: HttpRequest) -> None:
         """Perform authentication for the MCP endpoint."""
         authenticators = [auth() for auth in self.authentication_classes]
@@ -178,33 +167,27 @@ class MCPView(View):
             authenticators=authenticators,
         )
 
-        # Perform authentication
-        for authenticator in authenticators:
-            try:
-                user_auth_tuple = authenticator.authenticate(drf_request)
-            except exceptions.APIException as exc:
-                # Set the auth_header for proper WWW-Authenticate header
-                auth_header = self.get_authenticate_header(request)
-                if auth_header:
-                    exc.auth_header = auth_header
-                raise
+        try:
+            # Trigger authentication by accessing the user property
+            # This will run through all authenticators and set user/auth
+            _ = drf_request.user
 
-            if user_auth_tuple is not None:
-                drf_request._authenticator = authenticator
-                drf_request.user, drf_request.auth = user_auth_tuple
-                # Store authenticated user on original request for later use
-                request.user = drf_request.user
-                request.auth = drf_request.auth
-                return
+            # If authentication is required but user is anonymous, raise NotAuthenticated
+            if self.authentication_classes and not drf_request.user.is_authenticated:
+                raise exceptions.NotAuthenticated()
+        except (
+            exceptions.AuthenticationFailed,
+            exceptions.PermissionDenied,
+            exceptions.NotAuthenticated,
+        ) as exc:
+            # Add WWW-Authenticate header if we have authenticators
+            if authenticators:
+                exc.auth_header = authenticators[0].authenticate_header(drf_request)  # type: ignore[union-attr]
+            raise
 
-        # If we get here, no authenticator succeeded
-        if self.authentication_classes:
-            # Only raise if authentication is required
-            auth_header = self.get_authenticate_header(request)
-            not_authenticated = exceptions.NotAuthenticated()
-            if auth_header:
-                not_authenticated.auth_header = auth_header
-            raise not_authenticated
+        # Copy authenticated user/auth to the original request
+        request.user = drf_request.user
+        request.auth = drf_request.auth
 
     def check_mcp_permissions(self, request: HttpRequest) -> None:
         """Check permissions for the MCP endpoint."""
@@ -216,7 +199,8 @@ class MCPView(View):
         drf_request.auth = getattr(request, "auth", None)
 
         for permission in permissions:
-            if not permission.has_permission(drf_request, self):
+            # MCPView acts as a view-like object for permission checking
+            if not permission.has_permission(drf_request, None):  # type: ignore[arg-type]
                 raise exceptions.PermissionDenied(
                     detail=getattr(permission, "message", None),
                     code=getattr(permission, "code", None),
@@ -281,6 +265,10 @@ class MCPView(View):
         # Create ViewSet instance
         viewset = viewset_class()
 
+        # Get MCP settings to check for bypass options
+        bypass_viewset_auth = mcp_settings.BYPASS_VIEWSET_AUTHENTICATION
+        bypass_viewset_permissions = mcp_settings.BYPASS_VIEWSET_PERMISSIONS
+
         # Extract structured parameters
         method_kwargs = params.get("kwargs", {})
         body_data = params.get("body", {})
@@ -289,19 +277,21 @@ class MCPView(View):
         body_bytes = json.dumps(body_data).encode("utf-8") if body_data else b"{}"
         request = HttpRequest()
 
+        # Carry over META, authenticated user info from original request
         for key, value in original_request.META.items():
             request.META[key] = value
+        if hasattr(original_request, "user"):
+            request.user = original_request.user
+        if hasattr(original_request, "auth"):
+            request.auth = original_request.auth
 
+        # Replace the body with the body that was passed in via params
         request.META["HTTP_CONTENT_TYPE"] = "application/json"
         request.META["HTTP_CONTENT_LENGTH"] = str(len(body_bytes))
         request._body = body_bytes
         request._read_started = True  # We aren't creating a proper stream. Marking it as started tells the parser it does not need to read it as a stream.
 
         # Replicate what `rest_framework.views.APIView.dispatch` does during a normal API Request, but specialized for MCP.
-
-        # Get MCP settings to check for bypass options
-        bypass_viewset_auth = mcp_settings.BYPASS_VIEWSET_AUTHENTICATION
-        bypass_viewset_permissions = mcp_settings.BYPASS_VIEWSET_PERMISSIONS
 
         # Step 1: Initialize request - converts HttpRequest to DRF Request
         # Based on the implementation of `rest_framework.views.APIView.initialize_request`
@@ -342,12 +332,9 @@ class MCPView(View):
             if isinstance(
                 exc, (exceptions.AuthenticationFailed, exceptions.NotAuthenticated)
             ):
-                auth_header = None
                 authenticators = viewset.get_authenticators()
                 if authenticators:
-                    auth_header = authenticators[0].authenticate_header(drf_request)
-                if auth_header:
-                    exc.auth_header = auth_header
+                    exc.auth_header = authenticators[0].authenticate_header(drf_request)  # type: ignore[union-attr]
             raise
 
         # Check throttles
