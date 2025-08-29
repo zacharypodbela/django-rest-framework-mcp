@@ -10,7 +10,6 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework import exceptions
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import JSONParser
-from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 
 from .registry import registry
@@ -23,9 +22,22 @@ from .types import MCPTool
 class MCPView(View):
     """Main MCP HTTP endpoint handler."""
 
-    # Override the definition of these to enforce authentication and permission on the MCP endpoint
+    # Override the definition of these to enforce authentication on the MCP endpoint
     authentication_classes: list[Type[BaseAuthentication]] = []
-    permission_classes: list[Type[BasePermission]] = []
+
+    def has_mcp_permission(self, request: HttpRequest) -> bool:
+        """
+        Override this method to implement custom permission logic for the MCP endpoint.
+
+        Args:
+            request: The Django HttpRequest object (.user and .auth will be set if authenticated)
+
+        Returns:
+            bool: True if the request should be allowed, False otherwise
+
+        Default behavior: Allow all requests (return True)
+        """
+        return True
 
     def post(self, request):
         """Handle MCP requests."""
@@ -40,7 +52,8 @@ class MCPView(View):
 
             # Perform authentication and permission checks for the MCP endpoint
             self.perform_mcp_authentication(request)
-            self.check_mcp_permissions(request)
+            if not self.has_mcp_permission(request):
+                raise exceptions.PermissionDenied()
 
             # Route to appropriate handler
             if method == "initialize":
@@ -171,13 +184,8 @@ class MCPView(View):
             # Trigger authentication by accessing the user property
             # This will run through all authenticators and set user/auth
             _ = drf_request.user
-
-            # If authentication is required but user is anonymous, raise NotAuthenticated
-            if self.authentication_classes and not drf_request.user.is_authenticated:
-                raise exceptions.NotAuthenticated()
         except (
             exceptions.AuthenticationFailed,
-            exceptions.PermissionDenied,
             exceptions.NotAuthenticated,
         ) as exc:
             # Add WWW-Authenticate header if we have authenticators
@@ -188,23 +196,6 @@ class MCPView(View):
         # Copy authenticated user/auth to the original request
         request.user = drf_request.user
         request.auth = drf_request.auth
-
-    def check_mcp_permissions(self, request: HttpRequest) -> None:
-        """Check permissions for the MCP endpoint."""
-        permissions = [perm() for perm in self.permission_classes]
-
-        # Create a minimal DRF request for permission checking
-        drf_request = Request(request, parsers=[JSONParser()])
-        drf_request.user = getattr(request, "user", None)
-        drf_request.auth = getattr(request, "auth", None)
-
-        for permission in permissions:
-            # MCPView acts as a view-like object for permission checking
-            if not permission.has_permission(drf_request, None):  # type: ignore[arg-type]
-                raise exceptions.PermissionDenied(
-                    detail=getattr(permission, "message", None),
-                    code=getattr(permission, "code", None),
-                )
 
     def handle_auth_error(
         self, exc: exceptions.APIException, request_id: Optional[Any]

@@ -130,11 +130,11 @@ On the subject of Authentication, the Model Context Protocol states:
 2. Implementations using an STDIO transport SHOULD NOT follow the above specification, and instead retrieve credentials from the environment.
 3. Additionally, clients and servers MAY negotiate their own custom authentication and authorization strategies.
 
-Our library enables you to leverage the DRF authentication and permissions frameworks, by applying existing `BaseAuthentication` and `BasePermission` classes implemented on your ViewSets to MCP requests or configuring `BaseAuthentication` and `BasePermission` classes directly on the `MCPView`. This flexibility enables developers to quickly retrofit existing APIs into MCP tools or install and leverage different authentication methods for MCP clients (such as an OAuth package if they want to conform to the "suggested" MCP standards).
+Our library enables you to leverage DRF's authentication framework on both the MCP endpoint level and individual ViewSet level, giving you flexibility in how you secure your MCP tools.
 
-#### Using Existing API Authentication
+#### Using Existing API Authentication on ViewSets
 
-If your ViewSet specifies any `authentication_classes` and `permission_classes`, MCP Clients can be required to authenticate using the same methods as your normal API requests:
+If your ViewSet specifies `authentication_classes` and/or `permission_classes`, MCP client requests will be required to authenticate and pass permission checks using the same methods as your normal API requests:
 
 ```python
 from rest_framework.authentication import TokenAuthentication
@@ -167,18 +167,20 @@ Authorization: Token your-token-here
 }
 ```
 
-#### Defining Authentication on the MCPView
+#### Defining Authentication and Permissions on the MCP Endpoint
 
-`BaseAuthentication` and `BasePermission` classes can also be used to require authentication and check permissions on the `/mcp` endpoint itself by subclassing MCPView:
+You can add authentication to requests made to the `/mcp` endpoint by subclassing `MCPView` and setting the `authentication_classes` property, just as you would for an `APIView`. You can add permissions to requests made to the `/mcp` endpoint by overriding and implementing the `has_mcp_permission` method. (The default implementation of `has_mcp_permission()` returns `True`, allowing all requests.)
 
 ```python
 from djangorestframework_mcp.views import MCPView
 from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
 
 class AuthenticatedMCPView(MCPView):
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    
+    def has_mcp_permission(self, request):
+        """Override this method to implement custom permission logic."""
+        return request.user.is_authenticated
 
 # Then in urls.py
 urlpatterns = [
@@ -186,15 +188,34 @@ urlpatterns = [
 ]
 ```
 
-In cases where you want to have different authentication methods run on your `/mcp` endpoint and don't want to leverage the classes defined on your API ViewSets, you can bypass the authentication and/or permissions of the ViewSets:
+The `has_mcp_permission(self, request)` method is called after authentication, so `user` and `auth` will be both set allowing you to implement any custom authorization logic:
+
+```python
+class RestrictedMCPView(MCPView):
+    authentication_classes = [TokenAuthentication]
+    
+    def has_mcp_permission(self, request):
+        # Only allow users in the 'mcp_users' group
+        return (
+            request.user.is_authenticated 
+            and request.user.groups.filter(name='mcp_users').exists()
+        )
+```
+
+Just as with DRF, if you have authentication classes but no permission requirements, unauthenticated requests are allowed to continue and `request.user` will be an `AnonymousUser`.
+
+#### Bypassing ViewSet Authentication
+
+In cases where you want to apply different authentication methods and/or permissions rules for MCP clients versus regular API clients, you can bypass ViewSet-level authentication and/or permissions:
 
 ```python
 # settings.py
 DJANGORESTFRAMEWORK_MCP = {
-    'BYPASS_VIEWSET_AUTHENTICATION': True,  # Skip any authentication implemented in the ViewSet
-    'BYPASS_VIEWSET_PERMISSIONS': True,  # Skip any permissions implemented in the ViewSet
+    'BYPASS_VIEWSET_AUTHENTICATION': True,  # Skip authentication on ViewSets
+    'BYPASS_VIEWSET_PERMISSIONS': True,     # Skip permissions on ViewSets
 }
 ```
+
 
 #### Authenticating STDIO Transport (Using MCP-Remote)
 
