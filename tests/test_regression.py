@@ -1,10 +1,13 @@
 """Regression tests to ensure normal DRF functionality continues to work."""
 
+import base64
 import json
 from decimal import Decimal
 
-from django.test import Client, TestCase
+from django.contrib.auth.models import User
+from django.test import Client, TestCase, override_settings
 from rest_framework import status
+from rest_framework.authtoken.models import Token
 
 from .models import Customer, Product
 
@@ -364,3 +367,247 @@ class DRFRegressionTests(TestCase):
         # DELETE should work
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+
+@override_settings(ROOT_URLCONF="tests.urls")
+class AuthenticationRegressionTests(TestCase):
+    """Regression tests to ensure normal DRF API authentication still works unchanged."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.user = User.objects.create_user("apiuser", "api@example.com", "apipass")
+        self.token = Token.objects.create(user=self.user)
+
+        # Create a staff user for permission tests
+        self.staff_user = User.objects.create_user(
+            "staffuser", "staff@example.com", "staffpass", is_staff=True
+        )
+        self.staff_token = Token.objects.create(user=self.staff_user)
+
+    def test_authenticated_viewset_normal_api_with_valid_token(self):
+        """Test that authenticated ViewSets work normally via DRF API with valid token."""
+        # Make direct API call to ViewSet (not MCP)
+        response = self.client.get(
+            "/api/auth/authenticated/",  # Direct API endpoint
+            HTTP_AUTHORIZATION=f"Token {self.token.key}",
+        )
+
+        # Should succeed with 200
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["name"], "Authenticated Item")
+
+    def test_authenticated_viewset_normal_api_without_token(self):
+        """Test that authenticated ViewSets reject unauthenticated API requests."""
+        # Make direct API call without token
+        response = self.client.get("/api/auth/authenticated/")
+
+        # Should return 401 Unauthorized
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("WWW-Authenticate", response)
+        self.assertEqual(response["WWW-Authenticate"], "Token")
+
+    def test_authenticated_viewset_normal_api_with_invalid_token(self):
+        """Test that authenticated ViewSets reject invalid tokens via API."""
+        response = self.client.get(
+            "/api/auth/authenticated/", HTTP_AUTHORIZATION="Token invalid-token-123"
+        )
+
+        # Should return 401 Unauthorized
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.content)
+        self.assertIn("Invalid token", data["detail"])
+
+    def test_unauthenticated_viewset_normal_api_works(self):
+        """Test that unauthenticated ViewSets work normally via API without token."""
+        response = self.client.get("/api/auth/unauthenticated/")
+
+        # Should succeed with 200
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertIsInstance(data, list)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["name"], "Public Item")
+
+    def test_multiple_auth_viewset_token_auth_via_api(self):
+        """Test ViewSet with multiple auth classes works with token via API."""
+        response = self.client.get(
+            "/api/auth/multipleauth/", HTTP_AUTHORIZATION=f"Token {self.token.key}"
+        )
+
+        # Should succeed
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data[0]["name"], "Multi-auth Item")
+
+    def test_multiple_auth_viewset_basic_auth_via_api(self):
+        """Test ViewSet with multiple auth classes works with basic auth via API."""
+        credentials = base64.b64encode(b"apiuser:apipass").decode("ascii")
+        response = self.client.get(
+            "/api/auth/multipleauth/", HTTP_AUTHORIZATION=f"Basic {credentials}"
+        )
+
+        # Should succeed
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data[0]["name"], "Multi-auth Item")
+
+    def test_custom_auth_viewset_normal_api_works(self):
+        """Test custom authentication class works via normal API."""
+        response = self.client.get(
+            "/api/auth/customauth/",
+            HTTP_AUTHORIZATION=f"Custom {self.token.key}",  # Custom keyword
+        )
+
+        # Should succeed
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data[0]["name"], "Custom Auth Item")
+
+    def test_custom_permission_viewset_normal_api_denied(self):
+        """Test custom permission class works via normal API."""
+        response = self.client.get("/api/auth/custompermission/")
+
+        # Should be denied by custom permission
+        self.assertEqual(response.status_code, 403)
+        data = json.loads(response.content)
+        self.assertIn("Custom permission denied", data["detail"])
+
+
+@override_settings(DJANGORESTFRAMEWORK_MCP={"BYPASS_VIEWSET_AUTHENTICATION": True})
+class BypassAuthenticationRegressionTests(TestCase):
+    """Test that bypassing MCP auth doesn't affect normal API authentication."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            "regressionuser", "regression@example.com", "regressionpass"
+        )
+        self.token = Token.objects.create(user=self.user)
+
+    def test_bypass_auth_setting_doesnt_affect_normal_api(self):
+        """Test that BYPASS_VIEWSET_AUTHENTICATION setting only affects MCP, not normal API."""
+        # Even with bypass setting enabled, normal API should still require auth
+        response = self.client.get("/api/auth/authenticated/")
+
+        # Should still return 401 for normal API calls
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("WWW-Authenticate", response)
+
+        # But should work with proper token
+        response = self.client.get(
+            "/api/auth/authenticated/", HTTP_AUTHORIZATION=f"Token {self.token.key}"
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_bypass_setting_isolation_from_regular_drf_behavior(self):
+        """Test that MCP bypass settings are completely isolated from DRF behavior."""
+        # Create a POST request to authenticated endpoint
+        response = self.client.post(
+            "/api/auth/authenticated/",
+            data=json.dumps({"test": "data"}),
+            content_type="application/json",
+        )
+
+        # Should still require authentication for normal API
+        self.assertIn(response.status_code, [401, 405])  # 401 or 405 Method Not Allowed
+
+        # With auth should work (if POST is allowed)
+        response = self.client.post(
+            "/api/auth/authenticated/",
+            data=json.dumps({"test": "data"}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Token {self.token.key}",
+        )
+
+        # Should not be affected by MCP bypass settings
+        self.assertNotEqual(response.status_code, 500)  # No server errors
+
+
+@override_settings(DJANGORESTFRAMEWORK_MCP={"BYPASS_VIEWSET_PERMISSIONS": True})
+class BypassPermissionsRegressionTests(TestCase):
+    """Test that bypassing MCP permissions doesn't affect normal API permissions."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("permuser", "perm@example.com", "permpass")
+        self.token = Token.objects.create(user=self.user)
+
+    def test_bypass_permissions_setting_doesnt_affect_normal_api(self):
+        """Test that BYPASS_VIEWSET_PERMISSIONS setting only affects MCP, not normal API."""
+        # Even with permissions bypass, normal API should still check permissions
+        response = self.client.get(
+            "/api/auth/authenticated/", HTTP_AUTHORIZATION=f"Token {self.token.key}"
+        )
+
+        # Should succeed (user is authenticated)
+        self.assertEqual(response.status_code, 200)
+
+        # Test without auth - should still fail
+        response = self.client.get("/api/auth/authenticated/")
+        self.assertEqual(response.status_code, 401)
+
+    def test_bypass_permissions_isolation(self):
+        """Test that permission bypass is isolated to MCP requests only."""
+        # Test custom permission ViewSet via normal API
+        response = self.client.get(
+            "/api/auth/custompermission/", HTTP_AUTHORIZATION=f"Token {self.token.key}"
+        )
+
+        # Should still be denied by normal API (permissions not actually bypassed)
+        self.assertEqual(response.status_code, 403)
+
+
+class AuthenticationMiddlewareCompatibilityTests(TestCase):
+    """Test compatibility with Django authentication middleware."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            "middleware", "middleware@example.com", "middlewarepass"
+        )
+        self.token = Token.objects.create(user=self.user)
+
+    def test_session_middleware_compatibility(self):
+        """Test that MCP auth works alongside session middleware."""
+        # Login user via session
+        self.client.login(username="middleware", password="middlewarepass")
+
+        # Normal API should work with session
+        response = self.client.get("/api/auth/multipleauth/")
+        # May work or may fail depending on CSRF, but shouldn't crash
+        self.assertIn(
+            response.status_code, [200, 403]
+        )  # Either success or CSRF failure
+
+    def test_auth_middleware_doesnt_interfere_with_token_auth(self):
+        """Test that auth middleware doesn't interfere with token authentication."""
+        response = self.client.get(
+            "/api/auth/authenticated/", HTTP_AUTHORIZATION=f"Token {self.token.key}"
+        )
+
+        # Should work normally
+        self.assertEqual(response.status_code, 200)
+
+    def test_mcp_and_api_auth_are_independent(self):
+        """Test that MCP and API authentication are completely independent."""
+        # Set up for both MCP and API requests
+        from djangorestframework_mcp.test import MCPClient
+
+        mcp_client = MCPClient()
+        mcp_client.defaults["HTTP_AUTHORIZATION"] = f"Token {self.token.key}"
+
+        # Both should work independently
+        api_response = self.client.get(
+            "/api/auth/authenticated/", HTTP_AUTHORIZATION=f"Token {self.token.key}"
+        )
+        self.assertEqual(api_response.status_code, 200)
+
+        # MCP should also work
+        mcp_result = mcp_client.call_tool("list_authenticated")
+        self.assertFalse(mcp_result.get("isError"))
+
+        # They should return the same data but in different formats
+        api_data = json.loads(api_response.content)
+        mcp_data = mcp_result["structuredContent"]
+
+        self.assertEqual(api_data[0]["name"], mcp_data[0]["name"])

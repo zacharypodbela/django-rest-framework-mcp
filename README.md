@@ -232,10 +232,10 @@ When using STDIO transport through MCP-Remote, authentication credentials to be 
         "--transport",
         "http-only",
         "--header",
-        "${AUTH_HEADER}" // Some setups don't escape whitespaces of args, so we recommend setting the entire header as an env var
+        "Authorization:${AUTH_HEADER}" // Some setups don't escape whitespaces of args, so we recommend setting the entire header as an env var
       ],
       "env": {
-        "AUTH_HEADER": "Authorization: your-header-here"
+        "AUTH_HEADER": "your-header-here"
       }
     }
   }
