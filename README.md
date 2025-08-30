@@ -220,7 +220,7 @@ DJANGORESTFRAMEWORK_MCP = {
 
 #### Authentication Error Handling
 
-When authentication fails, the default behavior is for the library to return proper HTTP status codes (401/403) and WWW-Authenticate headers in compliance with both HTTP and MCP specifications. The JSON-RPC response body also includes this information in the `error.data` field and human readable error message to guide LLMs.
+When authentication fails, the default behavior is for the library to return proper HTTP status codes (401/403) and WWW-Authenticate headers in compliance with both HTTP and MCP specifications. The JSON-RPC response body also includes this information as human-readable error messages so it can be leveraged by LLMs.
 
 Example response:
 
@@ -231,13 +231,14 @@ Content-Type: application/json
 
 {
   "jsonrpc": "2.0",
-  "error": {
-    "code": -32600,
-    "message": "Authentication credentials were not provided.",
-    "data": {
-      "status_code": 401,
-      "www_authenticate": "Token"
-    }
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Unauthorized: Authentication credentials were not provided. (WWW-Authenticate: Token)"
+      }
+    ],
+    "isError": true
   },
   "id": 1
 }
