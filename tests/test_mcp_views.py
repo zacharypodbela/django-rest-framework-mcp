@@ -402,15 +402,15 @@ class MCPViewAuthenticationTests(TestCase):
 
         response = view.dispatch(request)
 
-        # Should return 403 status (permission denied, not authentication required)
-        # Since auth is not required but permission check failed for anonymous user
-        self.assertEqual(response.status_code, 403)
+        # Should return 401 status (authentication required)
+        # Since authenticators are configured but no successful authentication occurred
+        self.assertEqual(response.status_code, 401)
 
         # Should have JSON-RPC error format
         content = json.loads(response.content.decode())
         self.assertIn("error", content)
         self.assertIn("data", content["error"])
-        self.assertEqual(content["error"]["data"]["status_code"], 403)
+        self.assertEqual(content["error"]["data"]["status_code"], 401)
 
     def test_mcpview_permission_required(self):
         """Verifies custom MCPView permission requirements are enforced."""
@@ -796,16 +796,16 @@ class MCPViewMultipleAuthenticationTests(TestCase):
 
         response = view.dispatch(request)
 
-        # Should return 403 (permission denied, not authentication required)
-        # Since auth is not required but permission check failed for anonymous user
-        self.assertEqual(response.status_code, 403)
+        # Should return 401 (authentication required)
+        # Since authenticators are configured but no successful authentication occurred
+        self.assertEqual(response.status_code, 401)
         content = json.loads(response.content.decode())
 
         # Should have proper error structure
         self.assertIn("error", content)
         self.assertEqual(content["error"]["code"], -32600)
         self.assertIn("data", content["error"])
-        self.assertEqual(content["error"]["data"]["status_code"], 403)
+        self.assertEqual(content["error"]["data"]["status_code"], 401)
 
         # No WWW-Authenticate header for permission denied (403), only for auth failures (401)
         self.assertNotIn("WWW-Authenticate", response)

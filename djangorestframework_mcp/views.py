@@ -1,7 +1,7 @@
 """MCP HTTP endpoint views."""
 
 import json
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Optional, Type, Union
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
@@ -10,7 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework import exceptions
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import JSONParser
-from rest_framework.request import Request
+from rest_framework.request import ForcedAuthentication, Request
 
 from .registry import registry
 from .schema import generate_tool_schema
@@ -51,8 +51,11 @@ class MCPView(View):
             request_id = body.get("id")
 
             # Perform authentication and permission checks for the MCP endpoint
-            self.perform_mcp_authentication(request)
+            successful_authenticator = self.perform_mcp_authentication(request)
             if not self.has_mcp_permission(request):
+                # If request is not permitted, determine what kind of exception to raise.
+                if self.authentication_classes and not successful_authenticator:
+                    raise exceptions.NotAuthenticated()
                 raise exceptions.PermissionDenied()
 
             # Route to appropriate handler
@@ -169,7 +172,9 @@ class MCPView(View):
                 "isError": True,
             }
 
-    def perform_mcp_authentication(self, request: HttpRequest) -> None:
+    def perform_mcp_authentication(
+        self, request: HttpRequest
+    ) -> Optional[Union[BaseAuthentication, ForcedAuthentication]]:
         """Perform authentication for the MCP endpoint."""
         authenticators = [auth() for auth in self.authentication_classes]
 
@@ -196,6 +201,8 @@ class MCPView(View):
         # Copy authenticated user/auth to the original request
         request.user = drf_request.user
         request.auth = drf_request.auth
+
+        return drf_request.successful_authenticator
 
     def handle_auth_error(
         self, exc: exceptions.APIException, request_id: Optional[Any]
