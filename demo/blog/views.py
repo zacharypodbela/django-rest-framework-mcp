@@ -1,6 +1,7 @@
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 
 from blog.models import Customer, Order, Post
@@ -73,6 +74,8 @@ class PostViewSet(viewsets.ModelViewSet):
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
+    # DEMO: permissions set on the ViewSet will still be applied to MCP requests
+    permission_classes = [IsAdminUser]
 
     # DEMO: Custom action for deactivating customers (business logic that's safe for MCP)
     @mcp_tool(
