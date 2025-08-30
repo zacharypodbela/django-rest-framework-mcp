@@ -1683,7 +1683,7 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertIn("result", data)
         self.assertTrue(data["result"]["isError"])
         error_text = data["result"]["content"][0]["text"]
-        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Unauthorized:", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_mcp_endpoint_auth_error_compatibility_mode(self):
@@ -1708,7 +1708,7 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertIn("result", data)
         self.assertTrue(data["result"]["isError"])
         error_text = data["result"]["content"][0]["text"]
-        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Unauthorized:", error_text)
 
         # WWW-Authenticate header should NOT be present in compatibility mode
         self.assertNotIn("WWW-Authenticate", response)
@@ -1733,7 +1733,7 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertIn("result", data)
         self.assertTrue(data["result"]["isError"])
         error_text = data["result"]["content"][0]["text"]
-        self.assertIn("Permission denied", error_text)
+        self.assertIn("Forbidden:", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_mcp_endpoint_permission_error_compatibility_mode(self):
@@ -1755,7 +1755,7 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertIn("result", data)
         self.assertTrue(data["result"]["isError"])
         error_text = data["result"]["content"][0]["text"]
-        self.assertIn("Permission denied", error_text)
+        self.assertIn("Forbidden:", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": False})
     def test_viewset_auth_error_default_behavior(self):
@@ -1781,7 +1781,7 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertIn("result", data)
         self.assertTrue(data["result"]["isError"])
         error_text = data["result"]["content"][0]["text"]
-        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Unauthorized:", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_viewset_auth_error_compatibility_mode(self):
@@ -1807,7 +1807,7 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertIn("result", data)
         self.assertTrue(data["result"]["isError"])
         error_text = data["result"]["content"][0]["text"]
-        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Unauthorized:", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": False})
     def test_viewset_permission_error_default_behavior(self):
@@ -1833,7 +1833,7 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertIn("result", data)
         self.assertTrue(data["result"]["isError"])
         error_text = data["result"]["content"][0]["text"]
-        self.assertIn("Permission denied", error_text)
+        self.assertIn("Forbidden:", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_viewset_permission_error_compatibility_mode(self):
@@ -1859,7 +1859,7 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertIn("result", data)
         self.assertTrue(data["result"]["isError"])
         error_text = data["result"]["content"][0]["text"]
-        self.assertIn("Permission denied", error_text)
+        self.assertIn("Forbidden:", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_object_level_permission_error_compatibility_mode(self):
@@ -1916,7 +1916,7 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertIn("result", data)
         self.assertTrue(data["result"]["isError"])
         error_text = data["result"]["content"][0]["text"]
-        self.assertIn("Permission denied", error_text)
+        self.assertIn("Forbidden:", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_successful_requests_unaffected(self):

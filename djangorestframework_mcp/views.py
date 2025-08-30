@@ -1,6 +1,7 @@
 """MCP HTTP endpoint views."""
 
 import json
+from http import HTTPStatus
 from typing import Any, Dict, Optional, Type
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -59,7 +60,7 @@ class MCPView(View):
             elif method == "notifications/initialized":
                 # Sent by the client to acknowledge the receipt of our response to its initialize handshake
                 # No response is expected
-                return HttpResponse(status=204)  # No Content
+                return HttpResponse(status=HTTPStatus.NO_CONTENT)
             elif method == "tools/list":
                 result = self.handle_tools_list()
             elif method == "tools/call":
@@ -214,10 +215,11 @@ class MCPView(View):
 
         # Build error message with additional context
         error_message = str(exc.detail)
-        if exc.status_code == 401:
-            error_message = f"Authentication failed: {error_message}"
-        elif exc.status_code == 403:
-            error_message = f"Permission denied: {error_message}"
+        try:
+            error_message = f"{HTTPStatus(exc.status_code).phrase}: {error_message}"
+        except ValueError:
+            # If exc.status_code not in HTTPStatus, just continue
+            pass
 
         # Add WWW-Authenticate info to the message for LLM context
         if getattr(exc, "auth_header", None):
@@ -226,7 +228,9 @@ class MCPView(View):
                 headers["WWW-Authenticate"] = exc.auth_header
 
         # Determine HTTP status code based on RETURN_200_FOR_ERRORS setting
-        http_status = 200 if mcp_settings.RETURN_200_FOR_ERRORS else exc.status_code
+        http_status = (
+            HTTPStatus.OK if mcp_settings.RETURN_200_FOR_ERRORS else exc.status_code
+        )
         response = JsonResponse(
             {
                 "jsonrpc": "2.0",
@@ -370,7 +374,7 @@ class MCPView(View):
         # Handle DRF Response objects
         if hasattr(response, "data"):
             # Handle DRF error responses
-            if response.status_code >= 400:
+            if response.status_code >= HTTPStatus.BAD_REQUEST.value:
                 raise ValueError(f"ViewSet returned error: {response.data}")
 
             # Handle successful responses

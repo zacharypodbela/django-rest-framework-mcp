@@ -411,7 +411,7 @@ class MCPViewAuthenticationTests(TestCase):
         self.assertIn("result", content)
         self.assertTrue(content["result"]["isError"])
         error_text = content["result"]["content"][0]["text"]
-        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Unauthorized:", error_text)
 
     def test_mcpview_permission_required(self):
         """Verifies custom MCPView permission requirements are enforced."""
@@ -761,7 +761,7 @@ class MCPViewMultipleAuthenticationTests(TestCase):
         self.assertIn("result", content)
         self.assertTrue(content["result"]["isError"])
         error_text = content["result"]["content"][0]["text"]
-        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Unauthorized:", error_text)
 
         # Should have WWW-Authenticate header from first authenticator (Token)
         self.assertIn("WWW-Authenticate", response)
@@ -806,7 +806,7 @@ class MCPViewMultipleAuthenticationTests(TestCase):
         self.assertIn("result", content)
         self.assertTrue(content["result"]["isError"])
         error_text = content["result"]["content"][0]["text"]
-        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Unauthorized:", error_text)
 
         # Should have WWW-Authenticate header for 401 auth failures
         self.assertIn("WWW-Authenticate", response)
@@ -977,7 +977,7 @@ class ErrorResponseTests(TestCase):
         self.assertIn("result", data)
         self.assertTrue(data["result"]["isError"])
         error_text = data["result"]["content"][0]["text"]
-        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Unauthorized:", error_text)
         self.assertIn("WWW-Authenticate: Token", error_text)
 
     def test_multiple_auth_methods_error_response(self):
@@ -1037,7 +1037,7 @@ class Return200ForErrorsTests(TestCase):
         self.assertIn("result", content)
         self.assertTrue(content["result"]["isError"])
         error_text = content["result"]["content"][0]["text"]
-        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Unauthorized:", error_text)
         self.assertIn("Authentication credentials were not provided", error_text)
         self.assertIn("WWW-Authenticate: Token", error_text)
 
@@ -1068,7 +1068,7 @@ class Return200ForErrorsTests(TestCase):
         self.assertIn("result", content)
         self.assertTrue(content["result"]["isError"])
         error_text = content["result"]["content"][0]["text"]
-        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Unauthorized:", error_text)
         self.assertIn("Authentication credentials were not provided", error_text)
         self.assertIn("WWW-Authenticate: Token", error_text)
 
@@ -1097,7 +1097,7 @@ class Return200ForErrorsTests(TestCase):
         self.assertIn("result", content)
         self.assertTrue(content["result"]["isError"])
         error_text = content["result"]["content"][0]["text"]
-        self.assertIn("Permission denied", error_text)
+        self.assertIn("Forbidden:", error_text)
         self.assertIn("You do not have permission", error_text)
 
     @patch("djangorestframework_mcp.views.mcp_settings.RETURN_200_FOR_ERRORS", True)
@@ -1123,7 +1123,7 @@ class Return200ForErrorsTests(TestCase):
         self.assertIn("result", content)
         self.assertTrue(content["result"]["isError"])
         error_text = content["result"]["content"][0]["text"]
-        self.assertIn("Permission denied", error_text)
+        self.assertIn("Forbidden:", error_text)
         self.assertIn("You do not have permission", error_text)
 
     def test_method_not_found_both_modes(self):
