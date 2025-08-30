@@ -1,9 +1,11 @@
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 
 from blog.models import Customer, Order, Post
+from blog.permissions import IsAuthorOrReadOnly
 from blog.serializers import (
     BulkPostSerializer,
     CreatePostSerializer,
@@ -18,14 +20,29 @@ from djangorestframework_mcp.decorators import mcp_tool, mcp_viewset
 @mcp_viewset()
 class PostViewSet(viewsets.ModelViewSet):
     queryset = Post.objects.all()
+    # DEMO: permissions set on the ViewSet will be applied to both API and MCP requests
+    permission_classes = [IsAuthorOrReadOnly]
 
     def get_serializer_class(self):
         if self.action == "bulk_create":
             return BulkPostSerializer
         return PostSerializer
 
+    def perform_create(self, serializer):
+        """Automatically set the author to the current user when creating a post."""
+        # Check if this is a bulk create (ListSerializer)
+        if hasattr(serializer, "child"):
+            # This is a ListSerializer for bulk operations
+            # We need to set the author for each post in the validated data
+            for post_data in serializer.validated_data:
+                post_data["author"] = self.request.user
+            serializer.save()
+        else:
+            # This is a regular single post creation
+            serializer.save(author=self.request.user)
+
     # DEMO: For overridden CRUD actions, use input_serializer if the input is different from the serializer_class
-    # DEMO: Custom logic using is_mcp_request works
+    # DEMO: Use is_mcp_request to run certain logic only on MCP requests
     @mcp_tool(
         name="create_posts_via_mcp",
         title="Create Posts via MCP",
@@ -33,7 +50,8 @@ class PostViewSet(viewsets.ModelViewSet):
         input_serializer=CreatePostSerializer,
     )
     def create(self, request, *args, **kwargs):
-        if request.is_mcp_request and request.data.get("content"):
+        # Check if this is an MCP request (need to use getattr since the attribute is only set on MCP requests)
+        if getattr(request, "is_mcp_request", False) and request.data.get("content"):
             # Append text to the end of the content noting it was created via MCP
             request.data["content"] += "\n\n*Created via MCP*"
 
