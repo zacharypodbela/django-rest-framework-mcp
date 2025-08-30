@@ -76,8 +76,8 @@ class MCPView(View):
         except json.JSONDecodeError:
             return self.error_response(None, -32700, "Parse error")
         except (
-            exceptions.NotAuthenticated,
             exceptions.AuthenticationFailed,
+            exceptions.NotAuthenticated,
             exceptions.PermissionDenied,
         ) as exc:
             return self.handle_auth_error(
@@ -156,7 +156,11 @@ class MCPView(View):
 
             return response
 
-        except (exceptions.NotAuthenticated, exceptions.PermissionDenied) as exc:
+        except (
+            exceptions.AuthenticationFailed,
+            exceptions.NotAuthenticated,
+            exceptions.PermissionDenied,
+        ) as exc:
             # Re-raise authentication/permission errors to be handled at HTTP level
             raise exc
         except Exception as e:
@@ -207,25 +211,28 @@ class MCPView(View):
     ) -> JsonResponse:
         """Handle authentication/permission errors with proper HTTP status and headers."""
         headers = {}
-        error_data = {
-            "status_code": exc.status_code,
-        }
 
-        # Add authentication header info
+        # Build error message with additional context
+        error_message = str(exc.detail)
+        if exc.status_code == 401:
+            error_message = f"Authentication failed: {error_message}"
+        elif exc.status_code == 403:
+            error_message = f"Permission denied: {error_message}"
+
+        # Add WWW-Authenticate info to the message for LLM context
         if getattr(exc, "auth_header", None):
+            error_message += f" (WWW-Authenticate: {exc.auth_header})"
             if not mcp_settings.RETURN_200_FOR_ERRORS:
                 headers["WWW-Authenticate"] = exc.auth_header
-            error_data["www_authenticate"] = exc.auth_header
 
         # Determine HTTP status code based on RETURN_200_FOR_ERRORS setting
         http_status = 200 if mcp_settings.RETURN_200_FOR_ERRORS else exc.status_code
         response = JsonResponse(
             {
                 "jsonrpc": "2.0",
-                "error": {
-                    "code": -32600,  # Invalid Request
-                    "message": str(exc.detail),
-                    "data": error_data,
+                "result": {
+                    "content": [{"type": "text", "text": error_message}],
+                    "isError": True,
                 },
                 "id": request_id,
             },

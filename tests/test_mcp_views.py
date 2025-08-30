@@ -406,11 +406,12 @@ class MCPViewAuthenticationTests(TestCase):
         # Since authenticators are configured but no successful authentication occurred
         self.assertEqual(response.status_code, 401)
 
-        # Should have JSON-RPC error format
+        # Should have JSON-RPC tool execution error format
         content = json.loads(response.content.decode())
-        self.assertIn("error", content)
-        self.assertIn("data", content["error"])
-        self.assertEqual(content["error"]["data"]["status_code"], 401)
+        self.assertIn("result", content)
+        self.assertTrue(content["result"]["isError"])
+        error_text = content["result"]["content"][0]["text"]
+        self.assertIn("Authentication failed", error_text)
 
     def test_mcpview_permission_required(self):
         """Verifies custom MCPView permission requirements are enforced."""
@@ -756,11 +757,11 @@ class MCPViewMultipleAuthenticationTests(TestCase):
         self.assertEqual(response.status_code, 401)
         content = json.loads(response.content.decode())
 
-        # Should have proper error structure
-        self.assertIn("error", content)
-        self.assertEqual(content["error"]["code"], -32600)
-        self.assertIn("data", content["error"])
-        self.assertEqual(content["error"]["data"]["status_code"], 401)
+        # Should have proper tool execution error structure
+        self.assertIn("result", content)
+        self.assertTrue(content["result"]["isError"])
+        error_text = content["result"]["content"][0]["text"]
+        self.assertIn("Authentication failed", error_text)
 
         # Should have WWW-Authenticate header from first authenticator (Token)
         self.assertIn("WWW-Authenticate", response)
@@ -801,14 +802,14 @@ class MCPViewMultipleAuthenticationTests(TestCase):
         self.assertEqual(response.status_code, 401)
         content = json.loads(response.content.decode())
 
-        # Should have proper error structure
-        self.assertIn("error", content)
-        self.assertEqual(content["error"]["code"], -32600)
-        self.assertIn("data", content["error"])
-        self.assertEqual(content["error"]["data"]["status_code"], 401)
+        # Should have proper tool execution error structure
+        self.assertIn("result", content)
+        self.assertTrue(content["result"]["isError"])
+        error_text = content["result"]["content"][0]["text"]
+        self.assertIn("Authentication failed", error_text)
 
-        # No WWW-Authenticate header for permission denied (403), only for auth failures (401)
-        self.assertNotIn("WWW-Authenticate", response)
+        # Should have WWW-Authenticate header for 401 auth failures
+        self.assertIn("WWW-Authenticate", response)
 
     def test_multiple_auth_headers_provided(self):
         """Test behavior when multiple auth headers are provided (only first should be used)"""
@@ -952,8 +953,13 @@ class ErrorResponseTests(TestCase):
         self.assertIn("WWW-Authenticate", response)
         self.assertIn("Token", response["WWW-Authenticate"])
 
+        # Also verify it's a tool execution error
+        data = json.loads(response.content)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+
     def test_jsonrpc_error_includes_auth_details(self):
-        """Verifies JSON-RPC error.data includes authentication error information."""
+        """Verifies JSON-RPC tool execution error includes authentication error information."""
         response = self.client.post(
             "/mcp/",
             data=json.dumps(
@@ -968,10 +974,11 @@ class ErrorResponseTests(TestCase):
         )
 
         data = json.loads(response.content)
-        self.assertIn("error", data)
-        self.assertIn("data", data["error"])
-        self.assertIn("status_code", data["error"]["data"])
-        self.assertEqual(data["error"]["data"]["status_code"], 401)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+        error_text = data["result"]["content"][0]["text"]
+        self.assertIn("Authentication failed", error_text)
+        self.assertIn("WWW-Authenticate: Token", error_text)
 
     def test_multiple_auth_methods_error_response(self):
         """Verifies error response lists all available auth methods."""
@@ -1023,17 +1030,16 @@ class Return200ForErrorsTests(TestCase):
         self.assertIn("WWW-Authenticate", response)
         self.assertEqual(response["WWW-Authenticate"], "Token")
 
-        # Should have proper JSON-RPC error structure
+        # Should have proper JSON-RPC tool execution error structure
         content = json.loads(response.content.decode())
         self.assertEqual(content["jsonrpc"], "2.0")
         self.assertEqual(content["id"], 1)
-        self.assertIn("error", content)
-        self.assertEqual(content["error"]["code"], -32600)
-        self.assertIn(
-            "Authentication credentials were not provided", content["error"]["message"]
-        )
-        self.assertEqual(content["error"]["data"]["status_code"], 401)
-        self.assertEqual(content["error"]["data"]["www_authenticate"], "Token")
+        self.assertIn("result", content)
+        self.assertTrue(content["result"]["isError"])
+        error_text = content["result"]["content"][0]["text"]
+        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Authentication credentials were not provided", error_text)
+        self.assertIn("WWW-Authenticate: Token", error_text)
 
     @patch("djangorestframework_mcp.views.mcp_settings.RETURN_200_FOR_ERRORS", True)
     def test_auth_error_compatibility_mode(self):
@@ -1055,19 +1061,16 @@ class Return200ForErrorsTests(TestCase):
         # Should NOT have WWW-Authenticate header in compatibility mode
         self.assertNotIn("WWW-Authenticate", response)
 
-        # Should preserve all error info in JSON-RPC response
+        # Should preserve all error info in JSON-RPC tool execution error
         content = json.loads(response.content.decode())
         self.assertEqual(content["jsonrpc"], "2.0")
         self.assertEqual(content["id"], 1)
-        self.assertIn("error", content)
-        self.assertEqual(content["error"]["code"], -32600)
-        self.assertIn(
-            "Authentication credentials were not provided", content["error"]["message"]
-        )
-
-        # Original status code preserved in error.data
-        self.assertEqual(content["error"]["data"]["status_code"], 401)
-        self.assertEqual(content["error"]["data"]["www_authenticate"], "Token")
+        self.assertIn("result", content)
+        self.assertTrue(content["result"]["isError"])
+        error_text = content["result"]["content"][0]["text"]
+        self.assertIn("Authentication failed", error_text)
+        self.assertIn("Authentication credentials were not provided", error_text)
+        self.assertIn("WWW-Authenticate: Token", error_text)
 
     def test_permission_error_default_behavior(self):
         """Test that with setting disabled, permission failures return HTTP 403."""
@@ -1087,14 +1090,15 @@ class Return200ForErrorsTests(TestCase):
         # Should NOT have WWW-Authenticate header for 403 permission errors
         self.assertNotIn("WWW-Authenticate", response)
 
-        # Should have proper JSON-RPC error structure
+        # Should have proper JSON-RPC tool execution error structure
         content = json.loads(response.content.decode())
         self.assertEqual(content["jsonrpc"], "2.0")
         self.assertEqual(content["id"], 1)
-        self.assertIn("error", content)
-        self.assertEqual(content["error"]["code"], -32600)
-        self.assertIn("You do not have permission", content["error"]["message"])
-        self.assertEqual(content["error"]["data"]["status_code"], 403)
+        self.assertIn("result", content)
+        self.assertTrue(content["result"]["isError"])
+        error_text = content["result"]["content"][0]["text"]
+        self.assertIn("Permission denied", error_text)
+        self.assertIn("You do not have permission", error_text)
 
     @patch("djangorestframework_mcp.views.mcp_settings.RETURN_200_FOR_ERRORS", True)
     def test_permission_error_compatibility_mode(self):
@@ -1112,9 +1116,15 @@ class Return200ForErrorsTests(TestCase):
         # Should return HTTP 200 in compatibility mode
         self.assertEqual(response.status_code, 200)
 
-        # Should preserve original 403 status code in error.data
+        # Should preserve all error info in JSON-RPC tool execution error
         content = json.loads(response.content.decode())
-        self.assertEqual(content["error"]["data"]["status_code"], 403)
+        self.assertEqual(content["jsonrpc"], "2.0")
+        self.assertEqual(content["id"], 1)
+        self.assertIn("result", content)
+        self.assertTrue(content["result"]["isError"])
+        error_text = content["result"]["content"][0]["text"]
+        self.assertIn("Permission denied", error_text)
+        self.assertIn("You do not have permission", error_text)
 
     def test_method_not_found_both_modes(self):
         """Test JSON-RPC 'method not found' errors return HTTP 200 in both modes (no change)."""

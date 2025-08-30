@@ -1278,10 +1278,12 @@ class ViewSetAuthenticationTests(TestCase):
 
         # Test with no token - clear the defaults first
         self.client.defaults.clear()
-        with self.assertRaises(Exception) as context:
-            self.client.call_tool("list_authenticated")
+        result = self.client.call_tool("list_authenticated")
+
+        # Should return error result instead of raising exception
+        self.assertTrue(result.get("isError"))
         self.assertIn(
-            "Authentication credentials were not provided", str(context.exception)
+            "Authentication credentials were not provided", result["content"][0]["text"]
         )
 
     def test_session_authentication_success(self):
@@ -1291,10 +1293,12 @@ class ViewSetAuthenticationTests(TestCase):
 
         # Note: Session auth with MCPClient may have issues with cookie handling
         # For now, expecting this to fail until session support is fully implemented
-        with self.assertRaises(Exception) as context:
-            self.client.call_tool("list_multipleauth")
+        result = self.client.call_tool("list_multipleauth")
+
+        # Should return error result instead of raising exception
+        self.assertTrue(result.get("isError"))
         self.assertIn(
-            "Authentication credentials were not provided", str(context.exception)
+            "Authentication credentials were not provided", result["content"][0]["text"]
         )
 
     def test_basic_authentication_success(self):
@@ -1329,10 +1333,12 @@ class ViewSetAuthenticationTests(TestCase):
     def test_permission_classes_applied(self):
         """Verifies ViewSet permission classes are enforced for MCP requests."""
         # Create unauthenticated request
-        with self.assertRaises(Exception) as context:
-            self.client.call_tool("list_authenticated")
+        result = self.client.call_tool("list_authenticated")
+
+        # Should return error result instead of raising exception
+        self.assertTrue(result.get("isError"))
         self.assertIn(
-            "Authentication credentials were not provided", str(context.exception)
+            "Authentication credentials were not provided", result["content"][0]["text"]
         )
 
     def test_unauthenticated_viewset_allows_access(self):
@@ -1355,10 +1361,11 @@ class ViewSetAuthenticationTests(TestCase):
     def test_custom_permission_class(self):
         """Verifies custom BasePermission subclasses work with MCP requests."""
         # Test ViewSet with custom permission that always denies
-        with self.assertRaises(Exception) as context:
-            self.client.call_tool("list_custompermission")
+        result = self.client.call_tool("list_custompermission")
 
-        self.assertIn("Custom permission denied", str(context.exception))
+        # Should return error result instead of raising exception
+        self.assertTrue(result.get("isError"))
+        self.assertIn("Custom permission denied", result["content"][0]["text"])
 
 
 @override_settings(DJANGORESTFRAMEWORK_MCP={"BYPASS_VIEWSET_AUTHENTICATION": True})
@@ -1378,11 +1385,14 @@ class BypassAuthenticationTests(TestCase):
     def test_bypass_viewset_authentication_setting(self):
         """Verifies BYPASS_VIEWSET_AUTHENTICATION alone fails with auth-dependent permissions."""
         # Should fail because we bypassed auth but kept IsAuthenticated permission
-        with self.assertRaises(Exception) as context:
-            self.client.call_tool("list_authenticated")
+        result = self.client.call_tool("list_authenticated")
+
+        # Should return error result instead of raising exception
+        self.assertTrue(result.get("isError"))
         # Should fail with permission error since user is not authenticated
         self.assertIn(
-            "You do not have permission to perform this action", str(context.exception)
+            "You do not have permission to perform this action",
+            result["content"][0]["text"],
         )
 
 
@@ -1475,10 +1485,13 @@ class MixedAuthenticationTests(TestCase):
         # Use MCPClient without authentication
         client = MCPClient()
         # Should fail because no authenticated user is present for permission check
-        with self.assertRaises(Exception) as context:
-            client.call_tool("list_authbypassed")
+        result = client.call_tool("list_authbypassed")
+
+        # Should return error result instead of raising exception
+        self.assertTrue(result.get("isError"))
         self.assertIn(
-            "You do not have permission to perform this action", str(context.exception)
+            "You do not have permission to perform this action",
+            result["content"][0]["text"],
         )
 
     def test_bypass_auth_permissions_with_mcp_endpoint_auth(self):
@@ -1621,9 +1634,11 @@ class MixedAuthenticationTests(TestCase):
         # Use MCPClient without authentication
         client = MCPClient()
         # Should fail because AnonymousUser.is_staff = False
-        with self.assertRaises(Exception) as context:
-            client.call_tool("list_attribute")
-        self.assertIn("User must be staff", str(context.exception))
+        result = client.call_tool("list_attribute")
+
+        # Should return error result instead of raising exception
+        self.assertTrue(result.get("isError"))
+        self.assertIn("User must be staff", result["content"][0]["text"])
 
 
 @override_settings(ROOT_URLCONF="tests.urls")
@@ -1665,10 +1680,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
 
         data = json.loads(response.content)
         self.assertEqual(data["jsonrpc"], "2.0")
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["code"], -32600)
-        self.assertIn("data", data["error"])
-        self.assertEqual(data["error"]["data"]["status_code"], 401)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+        error_text = data["result"]["content"][0]["text"]
+        self.assertIn("Authentication failed", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_mcp_endpoint_auth_error_compatibility_mode(self):
@@ -1690,10 +1705,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
 
         data = json.loads(response.content)
         self.assertEqual(data["jsonrpc"], "2.0")
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["code"], -32600)
-        self.assertIn("data", data["error"])
-        self.assertEqual(data["error"]["data"]["status_code"], 401)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+        error_text = data["result"]["content"][0]["text"]
+        self.assertIn("Authentication failed", error_text)
 
         # WWW-Authenticate header should NOT be present in compatibility mode
         self.assertNotIn("WWW-Authenticate", response)
@@ -1715,9 +1730,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
 
         data = json.loads(response.content)
         self.assertEqual(data["jsonrpc"], "2.0")
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["code"], -32600)
-        self.assertEqual(data["error"]["data"]["status_code"], 403)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+        error_text = data["result"]["content"][0]["text"]
+        self.assertIn("Permission denied", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_mcp_endpoint_permission_error_compatibility_mode(self):
@@ -1736,9 +1752,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
 
         data = json.loads(response.content)
         self.assertEqual(data["jsonrpc"], "2.0")
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["code"], -32600)
-        self.assertEqual(data["error"]["data"]["status_code"], 403)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+        error_text = data["result"]["content"][0]["text"]
+        self.assertIn("Permission denied", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": False})
     def test_viewset_auth_error_default_behavior(self):
@@ -1761,8 +1778,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 401)
         data = json.loads(response.content)
         self.assertEqual(data["jsonrpc"], "2.0")
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["data"]["status_code"], 401)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+        error_text = data["result"]["content"][0]["text"]
+        self.assertIn("Authentication failed", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_viewset_auth_error_compatibility_mode(self):
@@ -1785,8 +1804,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data["jsonrpc"], "2.0")
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["data"]["status_code"], 401)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+        error_text = data["result"]["content"][0]["text"]
+        self.assertIn("Authentication failed", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": False})
     def test_viewset_permission_error_default_behavior(self):
@@ -1809,8 +1830,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 403)
         data = json.loads(response.content)
         self.assertEqual(data["jsonrpc"], "2.0")
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["data"]["status_code"], 403)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+        error_text = data["result"]["content"][0]["text"]
+        self.assertIn("Permission denied", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_viewset_permission_error_compatibility_mode(self):
@@ -1833,8 +1856,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data["jsonrpc"], "2.0")
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["data"]["status_code"], 403)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+        error_text = data["result"]["content"][0]["text"]
+        self.assertIn("Permission denied", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_object_level_permission_error_compatibility_mode(self):
@@ -1888,8 +1913,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data["jsonrpc"], "2.0")
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["data"]["status_code"], 403)
+        self.assertIn("result", data)
+        self.assertTrue(data["result"]["isError"])
+        error_text = data["result"]["content"][0]["text"]
+        self.assertIn("Permission denied", error_text)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
     def test_successful_requests_unaffected(self):
