@@ -70,9 +70,9 @@ MCP requests do not go through the full DRF request lifecycle.
 **View lifecycle methods that will be called:**
 
 - **`perform_authentication(request)`** - Called unless `BYPASS_VIEWSET_AUTHENTICATION = True`
-- **`check_permissions(request)`** - Called unless `BYPASS_VIEWSET_PERMISSIONS = True`  
+- **`check_permissions(request)`** - Called unless `BYPASS_VIEWSET_PERMISSIONS = True`
 - **`check_throttles(request)`** - Always called (no bypass option)
-- **`determine_version(request, *args, **kwargs)`** - Always called to set request versioning
+- **`determine_version(request, \*args, **kwargs)`\*\* - Always called to set request versioning
 
 **View lifecycle methods that won't be called:**
 
@@ -177,7 +177,7 @@ from rest_framework.authentication import TokenAuthentication
 
 class AuthenticatedMCPView(MCPView):
     authentication_classes = [TokenAuthentication]
-    
+
     def has_mcp_permission(self, request):
         """Override this method to implement custom permission logic."""
         return request.user.is_authenticated
@@ -193,11 +193,11 @@ The `has_mcp_permission(self, request)` method is called after authentication, s
 ```python
 class RestrictedMCPView(MCPView):
     authentication_classes = [TokenAuthentication]
-    
+
     def has_mcp_permission(self, request):
         # Only allow users in the 'mcp_users' group
         return (
-            request.user.is_authenticated 
+            request.user.is_authenticated
             and request.user.groups.filter(name='mcp_users').exists()
         )
 ```
@@ -215,7 +215,6 @@ DJANGORESTFRAMEWORK_MCP = {
     'BYPASS_VIEWSET_PERMISSIONS': True,     # Skip permissions on ViewSets
 }
 ```
-
 
 #### Authenticating STDIO Transport (Using MCP-Remote)
 
@@ -357,8 +356,11 @@ class CustomerViewSet(viewsets.ModelViewSet):
     def get_queryset(self, request):
         queryset = Customer.objects.all()
 
+        # NOTE: The is_mcp_request property is only set for MCP calls, so trying to access it directly will result in an AttributeError if the Request did not originate from an MCP request. The simplest solution is to access the value with getattr instead.
+        is_mcp_request = getattr(request, 'is_mcp_request', False)
+
         # Limit MCP clients to active customers only
-        if request.is_mcp_request:
+        if is_mcp_request:
             queryset = queryset.filter(is_active=True)
 
         return queryset
@@ -525,7 +527,9 @@ Method decorator to register custom ViewSet actions and/or customize action MCP 
 - `description` (str, optional): Description for this specific action.
 - `input_serializer` (Serializer class or None, required for custom actions): Serializer class for input validation. Required for custom actions (can be None). Optional for CRUD actions.
 
-### Extended HttpRequest Properties
+### Extended Request Properties
+
+**NOTE:** These properties are only set for MCP calls, so trying to access them directly will result in an `AttributeError` if the `Request` did not originate from an MCP request. The simplest solution is to access them with `getattr` instead.
 
 #### `.is_mcp_request`
 
