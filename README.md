@@ -167,6 +167,8 @@ Authorization: Token your-token-here
 }
 ```
 
+If you are using custom `BasePermission` classes in your ViewSets, we strongly encourage setting the `message` property to add more specifics on why permission was denied to the error message as this will be passed back to the LLM in the response and help it determine the right next course of action.
+
 #### Defining Authentication and Permissions on the MCP Endpoint
 
 You can add authentication to requests made to the `/mcp` endpoint by subclassing `MCPView` and setting the `authentication_classes` property, just as you would for an `APIView`. You can add permissions to requests made to the `/mcp` endpoint by overriding and implementing the `has_mcp_permission` method. (The default implementation of `has_mcp_permission()` returns `True`, allowing all requests.)

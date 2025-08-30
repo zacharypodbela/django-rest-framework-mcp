@@ -4,9 +4,25 @@ from blog.models import Customer, Order, OrderItem, Post
 
 
 class PostSerializer(serializers.ModelSerializer):
+    author = serializers.StringRelatedField(read_only=True)
+    author_id = serializers.PrimaryKeyRelatedField(
+        source="author",
+        read_only=True,
+        help_text="ID of the author who created this post",
+    )
+
     class Meta:
         model = Post
-        fields = "__all__"
+        fields = [
+            "id",
+            "title",
+            "content",
+            "author",
+            "author_id",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["author", "author_id", "created_at", "updated_at"]
 
 
 # DEMO: Add label and/or help_text to fields to give the LLM more context and increase its ability to use the tool
@@ -17,6 +33,19 @@ class CreatePostSerializer(PostSerializer):
         label='Add "Created on" Footer',
         help_text="If true, appends the creation date to the end of the content",
     )
+
+    class Meta(PostSerializer.Meta):
+        fields = [
+            "id",
+            "title",
+            "content",
+            "add_created_on_footer",
+            "author",
+            "author_id",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["author", "author_id", "created_at", "updated_at"]
 
 
 class BulkPostSerializer(serializers.ListSerializer):
