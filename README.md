@@ -557,6 +557,32 @@ Method decorator to register custom ViewSet actions and/or customize action MCP 
 - `description` (str, optional): Description for this specific action.
 - `input_serializer` (Serializer class or None, required for custom actions): Serializer class for input validation. Required for custom actions (can be None). Optional for CRUD actions.
 
+### Views
+
+#### `MCPView`
+
+The main MCP HTTP endpoint handler that processes JSON-RPC requests and routes them to appropriate ViewSets.
+
+**Properties:**
+
+- `authentication_classes` (list[Type[BaseAuthentication]]): List of authentication classes to use for the MCP endpoint. Defaults to empty list (no authentication required).
+
+**Methods:**
+
+- `has_mcp_permission(self, request: HttpRequest) -> bool`: Override this method to implement custom permission logic for the MCP endpoint. Called after authentication, so `request.user` and `request.auth` are available. Default behavior returns True (allows all requests).
+
+### Settings
+
+#### `mcp_settings`
+
+Global settings object for accessing django-rest-framework-mcp configuration. Import from `djangorestframework_mcp.settings`.
+
+**Properties (Available Settings):**
+
+- `BYPASS_VIEWSET_AUTHENTICATION` (bool, default: False): When True, skips authentication checks configured on ViewSets during MCP tool execution.
+- `BYPASS_VIEWSET_PERMISSIONS` (bool, default: False): When True, skips permission checks configured on ViewSets during MCP tool execution.
+- `RETURN_200_FOR_ERRORS` (bool, default: False): When True, returns HTTP 200 status codes for authentication and permission errors while preserving JSON-RPC error information. This improves compatibility with MCP clients that don't properly handle HTTP error status codes. When False, returns proper HTTP status codes (401/403) in compliance with HTTP and MCP specifications.
+
 ### Extended Request Properties
 
 **NOTE:** These properties are only set for MCP calls, so trying to access them directly will result in an `AttributeError` if the `Request` did not originate from an MCP request. The simplest solution is to access them with `getattr` instead.
