@@ -8,6 +8,10 @@ This is `django-rest-framework-mcp`, a Python library that enables developers to
 
 ## In This Directory
 
+Refer to @CONTRIBUTING.md for the most important information on how to develop new functionality, which you will be doing a lot. **IMPORTANT:** YOU MUST **ALWAYS** be sure to run the formatter, linter, typechecking, and ensure the full test suite passes (Steps 2 and 4 in that doc) after making a code change!! Do not **ever** say you are done with a task without having done this cleanup.
+
+Refer to `/README.md` for user-facing guide to library.
+
 The repository includes offline documentation in `/external-docs`:
 
 - Django REST Framework API reference
@@ -24,5 +28,3 @@ The `/tests` directory contains all tests (unit and integration). Tests use pyte
 The `/demo` directory is a standalone Django app that can be used to manually test the MCP Server locally.
 
 The `/internal-docs` directory contains lower-level documentation about the implementation, strategy, or goals of the `django-rest-framework-mcp` project. See @internal-docs/CLAUDE.md for full list of resources.
-
-Refer to @README.md for user-facing guide to library. Be sure to pay close attention to the "Contributing" section which contains commands for running tests and a new feature checklist of things you must always do when developing new functionality. You are a contributor after all!
