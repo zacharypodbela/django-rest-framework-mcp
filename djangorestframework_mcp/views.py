@@ -1,7 +1,7 @@
 """MCP HTTP endpoint views."""
 
 import json
-from typing import Any, Dict, Optional, Type, Union
+from typing import Any, Dict, Optional, Type
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
@@ -10,7 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework import exceptions
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import JSONParser
-from rest_framework.request import ForcedAuthentication, Request
+from rest_framework.request import Request
 
 from .registry import registry
 from .schema import generate_tool_schema
@@ -51,12 +51,7 @@ class MCPView(View):
             request_id = body.get("id")
 
             # Perform authentication and permission checks for the MCP endpoint
-            successful_authenticator = self.perform_mcp_authentication(request)
-            if not self.has_mcp_permission(request):
-                # If request is not permitted, determine what kind of exception to raise.
-                if self.authentication_classes and not successful_authenticator:
-                    raise exceptions.NotAuthenticated()
-                raise exceptions.PermissionDenied()
+            self.perform_mcp_authentication_and_permissions_check(request)
 
             # Route to appropriate handler
             if method == "initialize":
@@ -172,9 +167,7 @@ class MCPView(View):
                 "isError": True,
             }
 
-    def perform_mcp_authentication(
-        self, request: HttpRequest
-    ) -> Optional[Union[BaseAuthentication, ForcedAuthentication]]:
+    def perform_mcp_authentication_and_permissions_check(self, request: HttpRequest):
         """Perform authentication for the MCP endpoint."""
         authenticators = [auth() for auth in self.authentication_classes]
 
@@ -189,6 +182,13 @@ class MCPView(View):
             # Trigger authentication by accessing the user property
             # This will run through all authenticators and set user/auth
             _ = drf_request.user
+
+            # Check permissions
+            if not self.has_mcp_permission(request):
+                # If request is not permitted, determine what kind of exception to raise.
+                if authenticators and not drf_request.successful_authenticator:
+                    raise exceptions.NotAuthenticated()
+                raise exceptions.PermissionDenied()
         except (
             exceptions.AuthenticationFailed,
             exceptions.NotAuthenticated,
@@ -201,8 +201,6 @@ class MCPView(View):
         # Copy authenticated user/auth to the original request
         request.user = drf_request.user
         request.auth = drf_request.auth
-
-        return drf_request.successful_authenticator
 
     def handle_auth_error(
         self, exc: exceptions.APIException, request_id: Optional[Any]
