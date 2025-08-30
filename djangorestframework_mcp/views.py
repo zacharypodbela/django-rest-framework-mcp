@@ -208,9 +208,12 @@ class MCPView(View):
 
         # Add authentication header info
         if getattr(exc, "auth_header", None):
-            headers["WWW-Authenticate"] = exc.auth_header
+            if not mcp_settings.RETURN_200_FOR_ERRORS:
+                headers["WWW-Authenticate"] = exc.auth_header
             error_data["www_authenticate"] = exc.auth_header
 
+        # Determine HTTP status code based on RETURN_200_FOR_ERRORS setting
+        http_status = 200 if mcp_settings.RETURN_200_FOR_ERRORS else exc.status_code
         response = JsonResponse(
             {
                 "jsonrpc": "2.0",
@@ -221,7 +224,7 @@ class MCPView(View):
                 },
                 "id": request_id,
             },
-            status=exc.status_code,
+            status=http_status,
         )
 
         # Add HTTP headers

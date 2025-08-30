@@ -27,6 +27,7 @@ class MCPSettingsTests(TestCase):
         expected_defaults = {
             "BYPASS_VIEWSET_AUTHENTICATION": False,
             "BYPASS_VIEWSET_PERMISSIONS": False,
+            "RETURN_200_FOR_ERRORS": False,
         }
         self.assertEqual(DEFAULTS, expected_defaults)
 
@@ -35,6 +36,7 @@ class MCPSettingsTests(TestCase):
         # Test default values
         self.assertFalse(self.settings.BYPASS_VIEWSET_AUTHENTICATION)
         self.assertFalse(self.settings.BYPASS_VIEWSET_PERMISSIONS)
+        self.assertFalse(self.settings.RETURN_200_FOR_ERRORS)
 
     def test_invalid_setting_raises_attribute_error(self):
         """Test that accessing invalid settings raises AttributeError."""
@@ -123,6 +125,7 @@ class GlobalSettingsInstanceTests(TestCase):
         """Test accessing settings through the global instance."""
         self.assertFalse(mcp_settings.BYPASS_VIEWSET_AUTHENTICATION)
         self.assertFalse(mcp_settings.BYPASS_VIEWSET_PERMISSIONS)
+        self.assertFalse(mcp_settings.RETURN_200_FOR_ERRORS)
 
     @override_settings(DJANGORESTFRAMEWORK_MCP={"BYPASS_VIEWSET_AUTHENTICATION": True})
     def test_global_instance_user_settings(self):
@@ -130,6 +133,13 @@ class GlobalSettingsInstanceTests(TestCase):
         # Need to reload the global instance to pick up new settings
         mcp_settings.reload()
         self.assertTrue(mcp_settings.BYPASS_VIEWSET_AUTHENTICATION)
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
+    def test_return_200_for_errors_setting(self):
+        """Test the RETURN_200_FOR_ERRORS setting."""
+        # Need to reload the global instance to pick up new settings
+        mcp_settings.reload()
+        self.assertTrue(mcp_settings.RETURN_200_FOR_ERRORS)
 
 
 class SettingsReloadTests(TestCase):

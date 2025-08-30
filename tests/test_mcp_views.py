@@ -995,5 +995,186 @@ class ErrorResponseTests(TestCase):
         self.assertIn("WWW-Authenticate", response)
 
 
+class Return200ForErrorsTests(TestCase):
+    """Test RETURN_200_FOR_ERRORS setting functionality."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
+        self.token = Token.objects.create(user=self.user)
+
+    def test_auth_error_default_behavior(self):
+        """Test that with setting disabled (default), auth failures return proper HTTP 401 status codes."""
+        from rest_framework import exceptions
+
+        view = MCPView()
+        exc = exceptions.NotAuthenticated(
+            "Authentication credentials were not provided."
+        )
+        exc.status_code = 401
+        exc.auth_header = "Token"
+
+        response = view.handle_auth_error(exc, 1)
+
+        # Should return HTTP 401
+        self.assertEqual(response.status_code, 401)
+
+        # Should have WWW-Authenticate header
+        self.assertIn("WWW-Authenticate", response)
+        self.assertEqual(response["WWW-Authenticate"], "Token")
+
+        # Should have proper JSON-RPC error structure
+        content = json.loads(response.content.decode())
+        self.assertEqual(content["jsonrpc"], "2.0")
+        self.assertEqual(content["id"], 1)
+        self.assertIn("error", content)
+        self.assertEqual(content["error"]["code"], -32600)
+        self.assertIn(
+            "Authentication credentials were not provided", content["error"]["message"]
+        )
+        self.assertEqual(content["error"]["data"]["status_code"], 401)
+        self.assertEqual(content["error"]["data"]["www_authenticate"], "Token")
+
+    @patch("djangorestframework_mcp.views.mcp_settings.RETURN_200_FOR_ERRORS", True)
+    def test_auth_error_compatibility_mode(self):
+        """Test that with setting enabled, auth failures return HTTP 200 but preserve error info in JSON-RPC response."""
+        from rest_framework import exceptions
+
+        view = MCPView()
+        exc = exceptions.NotAuthenticated(
+            "Authentication credentials were not provided."
+        )
+        exc.status_code = 401
+        exc.auth_header = "Token"
+
+        response = view.handle_auth_error(exc, 1)
+
+        # Should return HTTP 200 in compatibility mode
+        self.assertEqual(response.status_code, 200)
+
+        # Should NOT have WWW-Authenticate header in compatibility mode
+        self.assertNotIn("WWW-Authenticate", response)
+
+        # Should preserve all error info in JSON-RPC response
+        content = json.loads(response.content.decode())
+        self.assertEqual(content["jsonrpc"], "2.0")
+        self.assertEqual(content["id"], 1)
+        self.assertIn("error", content)
+        self.assertEqual(content["error"]["code"], -32600)
+        self.assertIn(
+            "Authentication credentials were not provided", content["error"]["message"]
+        )
+
+        # Original status code preserved in error.data
+        self.assertEqual(content["error"]["data"]["status_code"], 401)
+        self.assertEqual(content["error"]["data"]["www_authenticate"], "Token")
+
+    def test_permission_error_default_behavior(self):
+        """Test that with setting disabled, permission failures return HTTP 403."""
+        from rest_framework import exceptions
+
+        view = MCPView()
+        exc = exceptions.PermissionDenied(
+            "You do not have permission to perform this action."
+        )
+        exc.status_code = 403
+
+        response = view.handle_auth_error(exc, 1)
+
+        # Should return HTTP 403
+        self.assertEqual(response.status_code, 403)
+
+        # Should NOT have WWW-Authenticate header for 403 permission errors
+        self.assertNotIn("WWW-Authenticate", response)
+
+        # Should have proper JSON-RPC error structure
+        content = json.loads(response.content.decode())
+        self.assertEqual(content["jsonrpc"], "2.0")
+        self.assertEqual(content["id"], 1)
+        self.assertIn("error", content)
+        self.assertEqual(content["error"]["code"], -32600)
+        self.assertIn("You do not have permission", content["error"]["message"])
+        self.assertEqual(content["error"]["data"]["status_code"], 403)
+
+    @patch("djangorestframework_mcp.views.mcp_settings.RETURN_200_FOR_ERRORS", True)
+    def test_permission_error_compatibility_mode(self):
+        """Test that with setting enabled, permission failures return HTTP 200."""
+        from rest_framework import exceptions
+
+        view = MCPView()
+        exc = exceptions.PermissionDenied(
+            "You do not have permission to perform this action."
+        )
+        exc.status_code = 403
+
+        response = view.handle_auth_error(exc, 1)
+
+        # Should return HTTP 200 in compatibility mode
+        self.assertEqual(response.status_code, 200)
+
+        # Should preserve original 403 status code in error.data
+        content = json.loads(response.content.decode())
+        self.assertEqual(content["error"]["data"]["status_code"], 403)
+
+    def test_method_not_found_both_modes(self):
+        """Test JSON-RPC 'method not found' errors return HTTP 200 in both modes (no change)."""
+        view = MCPView()
+
+        # Default mode
+        response = view.error_response(1, -32601, "Method not found: unknown/method")
+        self.assertEqual(response.status_code, 200)
+
+        content = json.loads(response.content.decode())
+        self.assertEqual(content["error"]["code"], -32601)
+        self.assertIn("Method not found", content["error"]["message"])
+
+        # Compatibility mode (same behavior expected)
+        with patch(
+            "djangorestframework_mcp.views.mcp_settings.RETURN_200_FOR_ERRORS", True
+        ):
+            response = view.error_response(
+                1, -32601, "Method not found: unknown/method"
+            )
+            self.assertEqual(response.status_code, 200)
+
+    def test_parse_error_both_modes(self):
+        """Test malformed JSON returns HTTP 200 in both modes (no change)."""
+        view = MCPView()
+
+        # Default mode
+        response = view.error_response(None, -32700, "Parse error")
+        self.assertEqual(response.status_code, 200)
+
+        content = json.loads(response.content.decode())
+        self.assertEqual(content["error"]["code"], -32700)
+        self.assertEqual(content["error"]["message"], "Parse error")
+
+        # Compatibility mode (same behavior expected)
+        with patch(
+            "djangorestframework_mcp.views.mcp_settings.RETURN_200_FOR_ERRORS", True
+        ):
+            response = view.error_response(None, -32700, "Parse error")
+            self.assertEqual(response.status_code, 200)
+
+    def test_successful_requests_unaffected(self):
+        """Test that successful requests still return appropriate 2xx status codes regardless of setting."""
+        view = MCPView()
+
+        # Test successful response (default mode)
+        with patch("djangorestframework_mcp.views.registry") as mock_registry:
+            mock_registry.get_all_tools.return_value = []
+            result = view.handle_tools_list()
+            self.assertEqual(result, {"tools": []})
+
+        # Compatibility mode should not affect successful operations
+        with patch(
+            "djangorestframework_mcp.views.mcp_settings.RETURN_200_FOR_ERRORS", True
+        ):
+            with patch("djangorestframework_mcp.views.registry") as mock_registry:
+                mock_registry.get_all_tools.return_value = []
+                result = view.handle_tools_list()
+                self.assertEqual(result, {"tools": []})
+
+
 if __name__ == "__main__":
     unittest.main()

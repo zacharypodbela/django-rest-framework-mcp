@@ -1624,3 +1624,305 @@ class MixedAuthenticationTests(TestCase):
         with self.assertRaises(Exception) as context:
             client.call_tool("list_attribute")
         self.assertIn("User must be staff", str(context.exception))
+
+
+@override_settings(ROOT_URLCONF="tests.urls")
+class Return200ForErrorsIntegrationTests(TestCase):
+    """Integration tests for the RETURN_200_FOR_ERRORS setting."""
+
+    def setUp(self):
+        """Set up test data."""
+        # Clear registry and register auth-required viewsets
+        registry.clear()
+        registry.register_viewset(AuthenticatedViewSet)
+        registry.register_viewset(CustomPermissionViewSet)
+
+        # Create test user and token
+        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
+        self.token = Token.objects.create(user=self.user)
+
+    def tearDown(self):
+        """Clean up after each test."""
+        registry.clear()
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": False})
+    def test_mcp_endpoint_auth_error_default_behavior(self):
+        """Test MCP endpoint authentication errors return proper HTTP status codes by default."""
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
+
+        # Create authenticated MCP view
+        from djangorestframework_mcp.views import MCPView
+
+        class AuthMCPView(MCPView):
+            authentication_classes = [TokenAuthentication]
+
+            def has_mcp_permission(self, request):
+                return request.user.is_authenticated
+
+        # Test without auth - should return 401
+        response = AuthMCPView.as_view()(self._build_request(request_data))
+        self.assertEqual(response.status_code, 401)
+
+        data = json.loads(response.content)
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32600)
+        self.assertIn("data", data["error"])
+        self.assertEqual(data["error"]["data"]["status_code"], 401)
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
+    def test_mcp_endpoint_auth_error_compatibility_mode(self):
+        """Test MCP endpoint auth errors return HTTP 200 in compatibility mode."""
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
+
+        # Create authenticated MCP view
+        from djangorestframework_mcp.views import MCPView
+
+        class AuthMCPView(MCPView):
+            authentication_classes = [TokenAuthentication]
+
+            def has_mcp_permission(self, request):
+                return request.user.is_authenticated
+
+        # Test without auth - should return 200 but with error in body
+        response = AuthMCPView.as_view()(self._build_request(request_data))
+        self.assertEqual(response.status_code, 200)
+
+        data = json.loads(response.content)
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32600)
+        self.assertIn("data", data["error"])
+        self.assertEqual(data["error"]["data"]["status_code"], 401)
+
+        # WWW-Authenticate header should NOT be present in compatibility mode
+        self.assertNotIn("WWW-Authenticate", response)
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": False})
+    def test_mcp_endpoint_permission_error_default_behavior(self):
+        """Test MCP endpoint permission errors return proper HTTP status codes by default."""
+        from djangorestframework_mcp.views import MCPView
+
+        class PermissionMCPView(MCPView):
+            def has_mcp_permission(self, request):
+                return False  # Always deny
+
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
+
+        # Should return 403
+        response = PermissionMCPView.as_view()(self._build_request(request_data))
+        self.assertEqual(response.status_code, 403)
+
+        data = json.loads(response.content)
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32600)
+        self.assertEqual(data["error"]["data"]["status_code"], 403)
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
+    def test_mcp_endpoint_permission_error_compatibility_mode(self):
+        """Test MCP endpoint permission errors return HTTP 200 in compatibility mode."""
+        from djangorestframework_mcp.views import MCPView
+
+        class PermissionMCPView(MCPView):
+            def has_mcp_permission(self, request):
+                return False  # Always deny
+
+        request_data = {"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1}
+
+        # Should return 200 but with error in body
+        response = PermissionMCPView.as_view()(self._build_request(request_data))
+        self.assertEqual(response.status_code, 200)
+
+        data = json.loads(response.content)
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32600)
+        self.assertEqual(data["error"]["data"]["status_code"], 403)
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": False})
+    def test_viewset_auth_error_default_behavior(self):
+        """Test ViewSet authentication errors return proper HTTP status codes by default."""
+        from django.test import Client
+
+        client = Client()
+        request_data = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": "list_authenticated", "arguments": {}},
+            "id": 1,
+        }
+
+        # Should return 401 since no auth provided
+        response = client.post(
+            "/mcp/", data=json.dumps(request_data), content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.content)
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["data"]["status_code"], 401)
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
+    def test_viewset_auth_error_compatibility_mode(self):
+        """Test ViewSet auth errors return HTTP 200 in compatibility mode."""
+        from django.test import Client
+
+        client = Client()
+        request_data = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": "list_authenticated", "arguments": {}},
+            "id": 1,
+        }
+
+        # Should return 200 but with error in body
+        response = client.post(
+            "/mcp/", data=json.dumps(request_data), content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["data"]["status_code"], 401)
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": False})
+    def test_viewset_permission_error_default_behavior(self):
+        """Test ViewSet permission errors return proper HTTP status codes by default."""
+        from django.test import Client
+
+        client = Client()
+        request_data = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": "list_custompermission", "arguments": {}},
+            "id": 1,
+        }
+
+        # Should return 403 due to custom permission that always denies
+        response = client.post(
+            "/mcp/", data=json.dumps(request_data), content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 403)
+        data = json.loads(response.content)
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["data"]["status_code"], 403)
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
+    def test_viewset_permission_error_compatibility_mode(self):
+        """Test ViewSet permission errors return HTTP 200 in compatibility mode."""
+        from django.test import Client
+
+        client = Client()
+        request_data = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": "list_custompermission", "arguments": {}},
+            "id": 1,
+        }
+
+        # Should return 200 but with error in body
+        response = client.post(
+            "/mcp/", data=json.dumps(request_data), content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["data"]["status_code"], 403)
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
+    def test_object_level_permission_error_compatibility_mode(self):
+        """Test object-level permission failures return HTTP 200 in compatibility mode."""
+        from django.test import Client
+        from rest_framework.permissions import BasePermission
+
+        # Create a permission that checks object ownership
+        class IsOwnerPermission(BasePermission):
+            def has_object_permission(self, request, view, obj):
+                return obj.user == request.user
+
+        # Create a ViewSet with object-level permissions
+        @mcp_viewset()
+        class ObjectPermissionViewSet(viewsets.GenericViewSet):
+            authentication_classes = [TokenAuthentication]
+            permission_classes = [IsOwnerPermission]
+
+            def retrieve(self, request, pk=None):
+                # Simulate retrieving an object owned by a different user
+                from types import SimpleNamespace
+
+                from django.contrib.auth.models import User
+
+                other_user = User.objects.create_user(
+                    "otheruser", "other@example.com", "otherpass"
+                )
+                obj = SimpleNamespace(user=other_user, id=pk)
+                self.check_object_permissions(request, obj)
+                return Response({"id": pk, "owner": obj.user.username})
+
+        client = Client()
+        request_data = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": "retrieve_objectpermission",
+                "arguments": {"kwargs": {"pk": "1"}},
+            },
+            "id": 1,
+        }
+
+        # Should return 200 but with error in body due to object permission failure
+        response = client.post(
+            "/mcp/",
+            data=json.dumps(request_data),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Token {self.token.key}",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["data"]["status_code"], 403)
+
+    @override_settings(DJANGORESTFRAMEWORK_MCP={"RETURN_200_FOR_ERRORS": True})
+    def test_successful_requests_unaffected(self):
+        """Test successful requests are unaffected by compatibility mode."""
+        from django.test import Client
+
+        client = Client()
+        request_data = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": "list_unauthenticated", "arguments": {}},
+            "id": 1,
+        }
+
+        response = client.post(
+            "/mcp/", data=json.dumps(request_data), content_type="application/json"
+        )
+
+        # Successful requests should still return 200
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertEqual(data["jsonrpc"], "2.0")
+        self.assertIn("result", data)
+        self.assertNotIn("error", data)
+
+    def _build_request(self, data):
+        """Helper to build Django HttpRequest for testing."""
+        from django.http import HttpRequest
+
+        request = HttpRequest()
+        request.method = "POST"
+        request.content_type = "application/json"
+        request.META["CONTENT_TYPE"] = "application/json"
+        request._body = json.dumps(data).encode()
+        request._read_started = True
+        return request

@@ -5,6 +5,7 @@ For example your project's `settings.py` file might look like this:
 DJANGORESTFRAMEWORK_MCP = {
     'BYPASS_VIEWSET_AUTHENTICATION': False,
     'BYPASS_VIEWSET_PERMISSIONS': False,
+    'RETURN_200_FOR_ERRORS': False,
 }
 
 This module provides the `mcp_settings` object, that is used to access
@@ -22,6 +23,8 @@ DEFAULTS = {
     # Authentication and permission bypass settings
     "BYPASS_VIEWSET_AUTHENTICATION": False,
     "BYPASS_VIEWSET_PERMISSIONS": False,
+    # Error response compatibility settings
+    "RETURN_200_FOR_ERRORS": False,
 }
 
 

@@ -243,7 +243,37 @@ When using STDIO transport through MCP-Remote, authentication credentials to be 
 
 #### Authentication Error Handling
 
-When authentication fails, the library returns proper HTTP status codes (401/403) and WWW-Authenticate headers for HTTP-level compliance. The JSON-RPC response body also includes this information in the error.data field so MCP clients can programmatically access authentication requirements.
+When authentication fails, the default behavior is for the library to return proper HTTP status codes (401/403) and WWW-Authenticate headers in compliance with both HTTP and MCP specifications. The JSON-RPC response body also includes this information in the `error.data` field and human readable error message to guide LLMs.
+
+Example response:
+
+```json
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Token
+Content-Type: application/json
+
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32600,
+    "message": "Authentication credentials were not provided.",
+    "data": {
+      "status_code": 401,
+      "www_authenticate": "Token"
+    }
+  },
+  "id": 1
+}
+```
+
+While the MCP protocol specification clearly states that HTTP 401/403 status codes should be returned for authentication and permission errors, many MCP clients don't properly conform to this specification and are unable to handle these cases. (For example, MCP's own Typescript SDK doesn't currently handle 403 errors. See this [Github Issue](https://github.com/modelcontextprotocol/typescript-sdk/issues/541).) To better support compatibility with a wide variety of clients while the community and standards continue to evolve, you can enable the `RETURN_200_FOR_ERRORS` to return HTTP 200 status codes even for authentication/permission failures. This setting only affects the HTTP status code returned - the JSON-RPC error format remains the same, ensuring LLMs can still understand and react to failures.
+
+```python
+# settings.py
+DJANGORESTFRAMEWORK_MCP = {
+    'RETURN_200_FOR_ERRORS': True,  # Default: False
+}
+```
 
 ### Custom Actions
 
