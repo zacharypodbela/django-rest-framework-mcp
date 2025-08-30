@@ -137,3 +137,8 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
 }
+
+# MCP settings
+DJANGORESTFRAMEWORK_MCP = {
+    "RETURN_200_FOR_ERRORS": True,
+}

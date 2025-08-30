@@ -216,31 +216,6 @@ DJANGORESTFRAMEWORK_MCP = {
 }
 ```
 
-#### Authenticating STDIO Transport (Using MCP-Remote)
-
-When using STDIO transport through MCP-Remote, authentication credentials to be passed as HTTP headers can be set as environment variables like this:
-
-```json
-{
-  "mcpServers": {
-    "my-django-mcp": {
-      "command": "node",
-      "args": [
-        "path/to/mcp-remote",
-        "http://localhost:8000/mcp/",
-        "--transport",
-        "http-only",
-        "--header",
-        "Authorization:${AUTH_HEADER}" // Some setups don't escape whitespaces of args, so we recommend setting the entire header as an env var
-      ],
-      "env": {
-        "AUTH_HEADER": "your-header-here"
-      }
-    }
-  }
-}
-```
-
 #### Authentication Error Handling
 
 When authentication fails, the default behavior is for the library to return proper HTTP status codes (401/403) and WWW-Authenticate headers in compliance with both HTTP and MCP specifications. The JSON-RPC response body also includes this information in the `error.data` field and human readable error message to guide LLMs.
@@ -274,6 +249,33 @@ DJANGORESTFRAMEWORK_MCP = {
     'RETURN_200_FOR_ERRORS': True,  # Default: False
 }
 ```
+
+#### Authenticating STDIO Transport Using MCP-Remote
+
+When using STDIO transport through MCP-Remote, authentication credentials to be passed as HTTP headers can be set as environment variables like this:
+
+```json
+{
+  "mcpServers": {
+    "my-django-mcp": {
+      "command": "node",
+      "args": [
+        "path/to/mcp-remote",
+        "http://localhost:8000/mcp/",
+        "--transport",
+        "http-only",
+        "--header",
+        "Authorization:${AUTH_HEADER}" // Some setups don't escape whitespaces of args, so we recommend setting the entire header as an env var
+      ],
+      "env": {
+        "AUTH_HEADER": "your-header-here"
+      }
+    }
+  }
+}
+```
+
+As of writing this, MCP-remote does not properly handle 403 response and always assumes the authentication framework is OAuth when receiving 401 responses, so you'll also need to enable `RETURN_200_FOR_ERRORS` in your settings file.
 
 ### Custom Actions
 
