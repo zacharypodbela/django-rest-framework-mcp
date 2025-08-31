@@ -5,7 +5,7 @@ import json
 
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
-from rest_framework import viewsets
+from rest_framework import serializers, viewsets
 from rest_framework.authentication import (
     TokenAuthentication,
 )
@@ -17,7 +17,7 @@ from djangorestframework_mcp.decorators import mcp_viewset
 from djangorestframework_mcp.registry import registry
 from djangorestframework_mcp.test import MCPClient
 
-from .models import Customer
+from .models import Category, Customer, Order, Product, Tag
 from .views import (
     AuthenticatedViewSet,
     CustomAuthViewSet,
@@ -1953,3 +1953,364 @@ class Return200ForErrorsIntegrationTests(TestCase):
         request._body = json.dumps(data).encode()
         request._read_started = True
         return request
+
+
+# Relationship field test serializers and viewsets
+class OrderSerializer(serializers.ModelSerializer):
+    """Serializer for Order model with PrimaryKeyRelatedField."""
+
+    class Meta:
+        model = Order
+        fields = ["id", "customer", "total", "created_at"]
+        read_only_fields = ["created_at"]
+
+
+class ProductSerializer(serializers.ModelSerializer):
+    """Serializer for Product model with SlugRelatedField."""
+
+    category_slug = serializers.SlugRelatedField(
+        queryset=Category.objects.all(),
+        slug_field="slug",
+        source="category",
+        allow_null=True,
+    )
+
+    class Meta:
+        model = Product
+        fields = [
+            "id",
+            "name",
+            "description",
+            "price",
+            "in_stock",
+            "category_slug",
+            "slug",
+        ]
+
+
+class ProductWithTagsSerializer(serializers.ModelSerializer):
+    """Serializer with ManyToMany relationship using PrimaryKeyRelatedField."""
+
+    tags = serializers.PrimaryKeyRelatedField(
+        queryset=Tag.objects.all(), many=True, required=False
+    )
+
+    class Meta:
+        model = Product
+        fields = ["id", "name", "price", "tags"]
+
+
+class OrderViewSet(viewsets.ModelViewSet):
+    """ViewSet for Order with ForeignKey relationship."""
+
+    queryset = Order.objects.all()
+    serializer_class = OrderSerializer
+
+
+class SlugProductViewSet(viewsets.ModelViewSet):
+    """ViewSet for Product with SlugRelatedField."""
+
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+
+
+class TaggedProductViewSet(viewsets.ModelViewSet):
+    """ViewSet for Product with ManyToMany tags."""
+
+    queryset = Product.objects.all()
+    serializer_class = ProductWithTagsSerializer
+
+
+@override_settings(ROOT_URLCONF="tests.urls")
+class RelationshipFieldIntegrationTests(TestCase):
+    """Integration tests for relationship fields via MCP."""
+
+    def setUp(self):
+        """Set up test environment."""
+        super().setUp()
+        registry.clear()
+
+        # Register viewsets with unique basenames
+        registry.register_viewset(OrderViewSet, base_name="orders")
+        registry.register_viewset(SlugProductViewSet, base_name="slugproducts")
+        registry.register_viewset(TaggedProductViewSet, base_name="taggedproducts")
+
+        # Initialize MCP client
+        self.client = MCPClient()
+
+        # Create test data
+        self.customer1 = Customer.objects.create(
+            name="Alice Smith", email="alice@example.com", age=30
+        )
+        self.customer2 = Customer.objects.create(
+            name="Bob Jones", email="bob@example.com", age=25
+        )
+
+        self.category1 = Category.objects.create(name="Electronics", slug="electronics")
+        self.category2 = Category.objects.create(name="Books", slug="books")
+
+        self.product1 = Product.objects.create(
+            name="Laptop",
+            description="High-performance laptop",
+            price="999.99",
+            category=self.category1,
+            slug="laptop",
+        )
+
+        self.tag1 = Tag.objects.create(name="Featured")
+        self.tag2 = Tag.objects.create(name="Sale")
+        self.tag3 = Tag.objects.create(name="New")
+
+    def test_create_order_with_foreign_key(self):
+        """Test creating an order with PrimaryKeyRelatedField."""
+        result = self.client.call_tool(
+            "create_orders",
+            arguments={
+                "body": {
+                    "customer": self.customer1.pk,
+                    "total": "150.00",
+                }
+            },
+        )
+
+        # Extract data from structuredContent
+        data = result.get("structuredContent", result)
+        self.assertIn("id", data)
+        order = Order.objects.get(pk=data["id"])
+        self.assertEqual(order.customer, self.customer1)
+        self.assertEqual(str(order.total), "150.00")
+
+    def test_update_order_customer(self):
+        """Test updating an order's customer relationship."""
+        order = Order.objects.create(customer=self.customer1, total="100.00")
+
+        self.client.call_tool(
+            "update_orders",
+            arguments={
+                "kwargs": {"pk": str(order.pk)},
+                "body": {
+                    "customer": self.customer2.pk,
+                    "total": "100.00",
+                },
+            },
+        )
+
+        order.refresh_from_db()
+        self.assertEqual(order.customer, self.customer2)
+
+    def test_create_order_with_invalid_customer(self):
+        """Test validation error for non-existent customer PK."""
+        try:
+            result = self.client.call_tool(
+                "create_orders",
+                arguments={
+                    "body": {
+                        "customer": 99999,  # Non-existent PK
+                        "total": "150.00",
+                    }
+                },
+            )
+            # If we get here, no exception was raised - let's see what the result is
+            self.fail(f"Expected validation error, but got result: {result}")
+        except Exception as e:
+            # This is what we expect - a validation error
+            # Let's check what the actual error message contains
+            error_msg = str(e).lower()
+            # Common validation error phrases
+            validation_phrases = [
+                "invalid",
+                "does not exist",
+                "not found",
+                "constraint",
+            ]
+            self.assertTrue(
+                any(phrase in error_msg for phrase in validation_phrases),
+                f"Expected validation error, got: {e}",
+            )
+
+    def test_create_product_with_category_slug(self):
+        """Test creating a product with SlugRelatedField."""
+        result = self.client.call_tool(
+            "create_slugproducts",
+            arguments={
+                "body": {
+                    "name": "Python Book",
+                    "description": "Learn Python",
+                    "price": "29.99",
+                    "category_slug": "books",
+                    "slug": "python-book",
+                }
+            },
+        )
+
+        data = result.get("structuredContent", result)
+        self.assertIn("id", data)
+        product = Product.objects.get(pk=data["id"])
+        self.assertEqual(product.category, self.category2)
+        self.assertEqual(product.name, "Python Book")
+
+    def test_update_product_category_with_slug(self):
+        """Test updating a product's category using slug."""
+        self.client.call_tool(
+            "update_slugproducts",
+            arguments={
+                "kwargs": {"pk": str(self.product1.pk)},
+                "body": {
+                    "name": self.product1.name,
+                    "price": str(self.product1.price),
+                    "category_slug": "books",
+                    "slug": self.product1.slug,
+                },
+            },
+        )
+
+        self.product1.refresh_from_db()
+        self.assertEqual(self.product1.category, self.category2)
+
+    def test_create_product_with_null_category(self):
+        """Test creating a product with null category (allow_null=True)."""
+        result = self.client.call_tool(
+            "create_slugproducts",
+            arguments={
+                "body": {
+                    "name": "Standalone Product",
+                    "description": "No category",
+                    "price": "49.99",
+                    "category_slug": None,
+                    "slug": "standalone",
+                }
+            },
+        )
+
+        data = result.get("structuredContent", result)
+        product = Product.objects.get(pk=data["id"])
+        self.assertIsNone(product.category)
+
+    def test_invalid_slug_validation(self):
+        """Test validation error for non-existent slug."""
+        try:
+            result = self.client.call_tool(
+                "create_slugproducts",
+                arguments={
+                    "body": {
+                        "name": "Test Product",
+                        "price": "10.00",
+                        "category_slug": "non-existent-slug",
+                        "slug": "test-product",
+                    }
+                },
+            )
+            # If we get here, no exception was raised - let's see what the result is
+            self.fail(f"Expected validation error, but got result: {result}")
+        except Exception as e:
+            # This is what we expect - a validation error
+            error_msg = str(e).lower()
+            # Common validation error phrases
+            validation_phrases = [
+                "invalid",
+                "does not exist",
+                "not found",
+                "constraint",
+            ]
+            self.assertTrue(
+                any(phrase in error_msg for phrase in validation_phrases),
+                f"Expected validation error, got: {e}",
+            )
+
+    def test_product_with_many_tags(self):
+        """Test ManyToMany relationship with PrimaryKeyRelatedField."""
+        # Create product with tags
+        result = self.client.call_tool(
+            "create_taggedproducts",
+            arguments={
+                "body": {
+                    "name": "Tagged Product",
+                    "price": "99.99",
+                    "tags": [self.tag1.pk, self.tag2.pk],
+                }
+            },
+        )
+
+        data = result.get("structuredContent", result)
+        product = Product.objects.get(pk=data["id"])
+        self.assertEqual(product.tags.count(), 2)
+        self.assertIn(self.tag1, product.tags.all())
+        self.assertIn(self.tag2, product.tags.all())
+
+    def test_update_product_tags(self):
+        """Test updating ManyToMany tags."""
+        product = Product.objects.create(name="Test Product", price="50.00")
+        product.tags.add(self.tag1)
+
+        # Update to different tags
+        self.client.call_tool(
+            "update_taggedproducts",
+            arguments={
+                "kwargs": {"pk": str(product.pk)},
+                "body": {
+                    "name": product.name,
+                    "price": str(product.price),
+                    "tags": [self.tag2.pk, self.tag3.pk],
+                },
+            },
+        )
+
+        product.refresh_from_db()
+        self.assertEqual(product.tags.count(), 2)
+        self.assertNotIn(self.tag1, product.tags.all())
+        self.assertIn(self.tag2, product.tags.all())
+        self.assertIn(self.tag3, product.tags.all())
+
+    def test_empty_many_to_many(self):
+        """Test setting empty array for ManyToMany field."""
+        product = Product.objects.create(name="Test Product", price="50.00")
+        product.tags.add(self.tag1, self.tag2)
+
+        # Clear all tags
+        self.client.call_tool(
+            "update_taggedproducts",
+            arguments={
+                "kwargs": {"pk": str(product.pk)},
+                "body": {
+                    "name": product.name,
+                    "price": str(product.price),
+                    "tags": [],
+                },
+            },
+        )
+
+        product.refresh_from_db()
+        self.assertEqual(product.tags.count(), 0)
+
+    def test_list_tools_includes_relationship_fields(self):
+        """Test that tool schemas properly include relationship field info."""
+        result = self.client.list_tools()
+        tools = result["tools"]
+
+        # Find create_orders tool
+        create_orders = next(t for t in tools if t["name"] == "create_orders")
+        body_schema = create_orders["inputSchema"]["properties"]["body"]
+
+        # Check customer field is present and correct type
+        self.assertIn("customer", body_schema["properties"])
+        customer_field = body_schema["properties"]["customer"]
+        self.assertEqual(customer_field["type"], "integer")
+
+        # Find create_productslug tool
+        create_products = next(t for t in tools if t["name"] == "create_slugproducts")
+        body_schema = create_products["inputSchema"]["properties"]["body"]
+
+        # Check category_slug field is present and correct type
+        self.assertIn("category_slug", body_schema["properties"])
+        category_field = body_schema["properties"]["category_slug"]
+        self.assertEqual(category_field["type"], "string")
+
+        # Find create_productwithtags tool
+        create_tags = next(t for t in tools if t["name"] == "create_taggedproducts")
+        body_schema = create_tags["inputSchema"]["properties"]["body"]
+
+        # Check tags field is array of integers
+        self.assertIn("tags", body_schema["properties"])
+        tags_field = body_schema["properties"]["tags"]
+        self.assertEqual(tags_field["type"], "array")
+        self.assertEqual(tags_field["items"]["type"], "integer")

@@ -476,7 +476,7 @@ class CustomerMCPTests(TestCase):
   - ✅ Nested Serializers
   - ✅ ListSerializers
   - ✅ Formatting inferred and passed back to MCP Client as part of field description.
-  - _[Coming later: additional advanced types]_
+  - ✅ Related fields (PKRelated/SlugRelated/HyperlinkedRelated/ManyRelated)
 - ✅ Test utilities for MCP tools
 - ✅ Authentication
 
@@ -489,8 +489,6 @@ class CustomerMCPTests(TestCase):
 - Browsable UI of MCP tool, resource, and prompts discovery and invocation
 
 - Decorate custom validators with instructions (which will be shared with the MCP Client)
-
-- Relationship fields (PK/Slug/StringRelated)
 
 - Arrays/objects/JSONB fields
 

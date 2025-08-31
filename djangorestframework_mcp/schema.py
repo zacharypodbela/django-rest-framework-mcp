@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from rest_framework import serializers
 from rest_framework.fields import Field
+from rest_framework.utils.field_mapping import ClassLookupDict
 
 from .types import MCPTool
 
@@ -89,6 +90,102 @@ def get_time_schema(field: serializers.TimeField) -> Dict[str, Any]:
     return schema
 
 
+def get_primary_key_related_field_schema(
+    field: serializers.PrimaryKeyRelatedField,
+) -> Dict[str, Any]:
+    """Generate schema for PrimaryKeyRelatedField."""
+    # Get the model from queryset
+    model = field.get_queryset().model
+
+    # Get the actual field being referenced
+    related_obj_field = model._meta.pk
+    related_obj_field_name = related_obj_field.name
+
+    # Use DRF's serializer field mapping to get the appropriate serializer field
+    field_mapping = ClassLookupDict(  # type: ignore[type-var]
+        serializers.ModelSerializer.serializer_field_mapping
+    )
+    serializer_field_class = field_mapping[related_obj_field]
+
+    # Create a temporary serializer field instance and get its schema
+    temp_field = serializer_field_class()
+    temp_schema = field_to_json_schema(temp_field)
+    field_type = temp_schema["type"]
+
+    model_name = model._meta.verbose_name
+    description = f"Primary key ({related_obj_field_name}) of {model_name} object"
+
+    return {"type": field_type, "description": description}
+
+
+# TODO: This is very similar to implementation of get_primary_key_related_field_schema. DRY it up.
+def get_slug_related_field_schema(
+    field: serializers.SlugRelatedField,
+) -> Dict[str, Any]:
+    """Generate schema for SlugRelatedField."""
+    # Get the model from queryset
+    model = field.get_queryset().model
+
+    # Get the actual field being referenced
+    related_obj_field_name = field.slug_field
+    related_obj_field = model._meta.get_field(related_obj_field_name)
+
+    # Use DRF's serializer field mapping to get the appropriate serializer field
+    field_mapping = ClassLookupDict(  # type: ignore[type-var]
+        serializers.ModelSerializer.serializer_field_mapping
+    )
+    serializer_field_class = field_mapping[related_obj_field]
+
+    # Create a temporary serializer field instance and get its schema
+    temp_field = serializer_field_class()
+    temp_schema = field_to_json_schema(temp_field)
+    field_type = temp_schema["type"]
+
+    model_name = model._meta.verbose_name
+    description = f"{related_obj_field_name} field of related {model_name} object"
+
+    return {"type": field_type, "description": description}
+
+
+def get_hyperlinked_related_field_schema(
+    field: serializers.HyperlinkedRelatedField,
+) -> Dict[str, Any]:
+    """Generate schema for HyperlinkedRelatedField."""
+    schema = {"type": "string", "format": "uri"}
+
+    # Add description with view name info
+    description_parts = ["URL reference"]
+
+    if field.view_name:
+        description_parts.append(f"to {field.view_name}")
+
+    try:
+        model_name = field.get_queryset().model._meta.verbose_name
+        description_parts.insert(-1, f"for {model_name}")
+    except Exception:
+        pass
+
+    schema["description"] = " ".join(description_parts)
+    return schema
+
+
+# TODO: This is very similar to implementation of get_list_serializer_schema. DRY it up.
+def get_many_related_field_schema(
+    field: serializers.ManyRelatedField,
+) -> Dict[str, Any]:
+    """Generate schema for ManyRelatedField (wraps child field in array)."""
+    child_field = getattr(field, "child_relation", None)
+    if child_field is None:
+        raise ValueError("ManyRelatedField must have a child_relation field defined")
+
+    child_schema = field_to_json_schema(child_field)
+    schema = {"type": "array", "items": child_schema}
+    if "description" in child_schema:
+        schema["description"] = f"Array of {child_schema['description'].lower()}"
+
+    return schema
+
+
 def get_serializer_schema(serializer: serializers.BaseSerializer) -> Dict[str, Any]:
     properties = {}
     required = []
@@ -118,8 +215,13 @@ def get_list_serializer_schema(
 ) -> Dict[str, Any]:
     if serializer.child is None:
         raise ValueError("ListSerializer must have a child serializer defined")
+
     child_schema = field_to_json_schema(serializer.child)
-    return {"type": "array", "items": child_schema}
+    schema = {"type": "array", "items": child_schema}
+    if "description" in child_schema:
+        schema["description"] = f"Array of {child_schema['description'].lower()}"
+
+    return schema
 
 
 # Field type registry - maps DRF field classes to their schema generator functions
@@ -137,6 +239,10 @@ FIELD_TYPE_REGISTRY = {
     serializers.DateTimeField: get_datetime_schema,
     serializers.DateField: get_date_schema,
     serializers.TimeField: get_time_schema,
+    serializers.PrimaryKeyRelatedField: get_primary_key_related_field_schema,
+    serializers.SlugRelatedField: get_slug_related_field_schema,
+    serializers.HyperlinkedRelatedField: get_hyperlinked_related_field_schema,
+    serializers.ManyRelatedField: get_many_related_field_schema,
     serializers.ListSerializer: get_list_serializer_schema,
     serializers.BaseSerializer: get_serializer_schema,
 }

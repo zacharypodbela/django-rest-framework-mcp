@@ -1,14 +1,14 @@
+from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from blog.models import Customer, Order, OrderItem, Post
 
 
 class PostSerializer(serializers.ModelSerializer):
-    author = serializers.StringRelatedField(read_only=True)
+    author = serializers.StringRelatedField()
     author_id = serializers.PrimaryKeyRelatedField(
         source="author",
-        read_only=True,
-        help_text="ID of the author who created this post",
+        queryset=User.objects.all(),
     )
 
     class Meta:

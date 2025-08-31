@@ -1141,5 +1141,286 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         self.assertEqual(slug_property["description"], "The slug of the customer")
 
 
+class TestRelationshipFieldSchemas(unittest.TestCase):
+    """Test schema generation for relationship fields."""
+
+    def test_primary_key_related_field_integer(self):
+        """Test PrimaryKeyRelatedField with integer PK."""
+        from .models import Customer
+
+        field = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.all())
+        schema = field_to_json_schema(field)
+
+        # Should be integer type for default AutoField PK
+        self.assertEqual(schema["type"], "integer")
+
+    def test_primary_key_related_field_with_allow_null(self):
+        """Test PrimaryKeyRelatedField with allow_null=True."""
+        from .models import Customer
+
+        field = serializers.PrimaryKeyRelatedField(
+            queryset=Customer.objects.all(), allow_null=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should handle nullable
+        # Could be {"type": ["integer", "null"]} or {"type": "integer", "nullable": true}
+        # depending on implementation
+        self.assertIn("type", schema)
+
+    def test_primary_key_related_field_many(self):
+        """Test PrimaryKeyRelatedField with many=True becomes ManyRelatedField."""
+        from .models import Customer
+
+        # When many=True, DRF wraps it in ManyRelatedField
+        field = serializers.PrimaryKeyRelatedField(
+            queryset=Customer.objects.all(), many=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should be array of integers
+        self.assertEqual(schema["type"], "array")
+        self.assertIn("items", schema)
+        self.assertEqual(schema["items"]["type"], "integer")
+
+    def test_slug_related_field(self):
+        """Test SlugRelatedField schema generation."""
+        from .models import Category
+
+        field = serializers.SlugRelatedField(
+            queryset=Category.objects.all(), slug_field="slug"
+        )
+        schema = field_to_json_schema(field)
+
+        # Should be string type for slug
+        self.assertEqual(schema["type"], "string")
+        # Could include slug_field info in description
+        if "description" in schema:
+            self.assertIn("slug", schema["description"].lower())
+
+    def test_slug_related_field_with_allow_null(self):
+        """Test SlugRelatedField with allow_null=True."""
+        from .models import Category
+
+        field = serializers.SlugRelatedField(
+            queryset=Category.objects.all(), slug_field="slug", allow_null=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should handle nullable
+        self.assertIn("type", schema)
+
+    def test_slug_related_field_many(self):
+        """Test SlugRelatedField with many=True."""
+        from .models import Category
+
+        field = serializers.SlugRelatedField(
+            queryset=Category.objects.all(), slug_field="slug", many=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should be array of strings
+        self.assertEqual(schema["type"], "array")
+        self.assertIn("items", schema)
+        self.assertEqual(schema["items"]["type"], "string")
+
+    def test_hyperlinked_related_field(self):
+        """Test HyperlinkedRelatedField schema generation."""
+        from .models import Customer
+
+        field = serializers.HyperlinkedRelatedField(
+            queryset=Customer.objects.all(), view_name="customer-detail"
+        )
+        schema = field_to_json_schema(field)
+
+        # Should be string with URI format
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["format"], "uri")
+
+    def test_hyperlinked_related_field_many(self):
+        """Test HyperlinkedRelatedField with many=True."""
+        from .models import Customer
+
+        field = serializers.HyperlinkedRelatedField(
+            queryset=Customer.objects.all(), view_name="customer-detail", many=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should be array of URIs
+        self.assertEqual(schema["type"], "array")
+        self.assertIn("items", schema)
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["format"], "uri")
+
+    def test_many_related_field_wrapper(self):
+        """Test that ManyRelatedField properly wraps child field schema."""
+        from .models import Customer
+
+        # Create a PrimaryKeyRelatedField with many=True
+        # DRF internally creates ManyRelatedField(child=PrimaryKeyRelatedField())
+        field = serializers.PrimaryKeyRelatedField(
+            queryset=Customer.objects.all(), many=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should wrap child schema in array
+        self.assertEqual(schema["type"], "array")
+        self.assertIn("items", schema)
+        # Items should have the child field's schema
+        self.assertEqual(schema["items"]["type"], "integer")
+
+    def test_enhanced_field_descriptions(self):
+        """Test that relationship fields generate enhanced descriptions with actual field names."""
+        from .models import Category, Customer
+
+        # Test PrimaryKeyRelatedField includes actual PK field name and "object"
+        pk_field = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.all())
+        pk_schema = field_to_json_schema(pk_field)
+        self.assertIn("description", pk_schema)
+        description = pk_schema["description"]
+        self.assertIn("id", description)  # Should mention the actual PK field name
+        self.assertIn("customer", description.lower())  # Should mention the model
+        self.assertIn("object", description.lower())  # Should end with "object"
+        # Expected format: "Primary key (id) of customer object"
+        self.assertEqual(description, "Primary key (id) of customer object")
+
+        # Test SlugRelatedField includes actual slug field name in new format
+        slug_field = serializers.SlugRelatedField(
+            queryset=Category.objects.all(), slug_field="slug"
+        )
+        slug_schema = field_to_json_schema(slug_field)
+        self.assertIn("description", slug_schema)
+        slug_description = slug_schema["description"]
+        self.assertIn("slug", slug_description.lower())  # Should mention slug field
+        self.assertIn("category", slug_description.lower())  # Should mention model
+        self.assertIn("object", slug_description.lower())  # Should include "object"
+        # Expected format: "slug field of related category object"
+        self.assertEqual(slug_description, "slug field of related category object")
+
+        # Test SlugRelatedField with custom field name
+        custom_slug_field = serializers.SlugRelatedField(
+            queryset=Category.objects.all(), slug_field="name"
+        )
+        custom_schema = field_to_json_schema(custom_slug_field)
+        custom_description = custom_schema["description"]
+        self.assertIn("name", custom_description.lower())  # Should mention custom field
+        self.assertIn("category", custom_description.lower())  # Should mention model
+        # Expected format: "name field of related category object"
+        self.assertEqual(custom_description, "name field of related category object")
+
+
+class TestRelationshipFieldsInSerializers(unittest.TestCase):
+    """Test relationship fields within serializer schemas."""
+
+    def test_serializer_with_foreign_key(self):
+        """Test serializer with ForeignKey relationship."""
+        from .models import Customer
+
+        class OrderSerializer(serializers.Serializer):
+            id = serializers.IntegerField(read_only=True)
+            customer = serializers.PrimaryKeyRelatedField(
+                queryset=Customer.objects.all()
+            )
+            total = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+        schema = get_serializer_schema(OrderSerializer())
+
+        # Should include customer field as integer
+        self.assertIn("customer", schema["properties"])
+        self.assertEqual(schema["properties"]["customer"]["type"], "integer")
+        # Should be required
+        self.assertIn("customer", schema["required"])
+
+    def test_serializer_with_many_to_many(self):
+        """Test serializer with ManyToMany relationship."""
+        from .models import Product
+
+        class TagSerializer(serializers.Serializer):
+            name = serializers.CharField(max_length=50)
+            products = serializers.PrimaryKeyRelatedField(
+                queryset=Product.objects.all(), many=True, required=False
+            )
+
+        schema = get_serializer_schema(TagSerializer())
+
+        # Should include products field as array
+        self.assertIn("products", schema["properties"])
+        products_schema = schema["properties"]["products"]
+        self.assertEqual(products_schema["type"], "array")
+        self.assertEqual(products_schema["items"]["type"], "integer")
+        # Should not be required
+        self.assertNotIn("products", schema["required"])
+
+    def test_serializer_with_slug_relationship(self):
+        """Test serializer using SlugRelatedField."""
+        from .models import Category
+
+        class ProductSerializer(serializers.Serializer):
+            name = serializers.CharField(max_length=100)
+            price = serializers.DecimalField(max_digits=10, decimal_places=2)
+            category_slug = serializers.SlugRelatedField(
+                queryset=Category.objects.all(),
+                slug_field="slug",
+                source="category",
+                allow_null=True,
+            )
+
+        schema = get_serializer_schema(ProductSerializer())
+
+        # Should include category_slug as string
+        self.assertIn("category_slug", schema["properties"])
+        self.assertEqual(schema["properties"]["category_slug"]["type"], "string")
+
+    def test_serializer_with_hyperlinked_relationship(self):
+        """Test serializer using HyperlinkedRelatedField."""
+        from .models import Customer
+
+        class OrderSerializer(serializers.Serializer):
+            id = serializers.IntegerField(read_only=True)
+            customer_url = serializers.HyperlinkedRelatedField(
+                queryset=Customer.objects.all(),
+                view_name="customer-detail",
+                source="customer",
+            )
+            total = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+        schema = get_serializer_schema(OrderSerializer())
+
+        # Should include customer_url as URI string
+        self.assertIn("customer_url", schema["properties"])
+        customer_schema = schema["properties"]["customer_url"]
+        self.assertEqual(customer_schema["type"], "string")
+        self.assertEqual(customer_schema["format"], "uri")
+
+    def test_nested_serializer_with_relationships(self):
+        """Test nested serializers containing relationship fields."""
+        from .models import Category
+
+        class CategorySerializer(serializers.Serializer):
+            name = serializers.CharField()
+            slug = serializers.SlugField()
+
+        class ProductWithCategorySerializer(serializers.Serializer):
+            name = serializers.CharField()
+            price = serializers.DecimalField(max_digits=10, decimal_places=2)
+            category = CategorySerializer()  # Nested serializer
+            category_id = serializers.PrimaryKeyRelatedField(
+                queryset=Category.objects.all(), source="category", write_only=True
+            )
+
+        schema = get_serializer_schema(ProductWithCategorySerializer())
+
+        # Should include nested category object
+        self.assertIn("category", schema["properties"])
+        category_schema = schema["properties"]["category"]
+        self.assertEqual(category_schema["type"], "object")
+        self.assertIn("name", category_schema["properties"])
+        self.assertIn("slug", category_schema["properties"])
+
+        # Should include category_id for writing
+        self.assertIn("category_id", schema["properties"])
+        self.assertEqual(schema["properties"]["category_id"]["type"], "integer")
+
+
 if __name__ == "__main__":
     unittest.main()
