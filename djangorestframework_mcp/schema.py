@@ -309,6 +309,13 @@ def field_to_json_schema(field: Field) -> Dict[str, Any]:
     if hasattr(field, "min_length") and field.min_length:
         schema["minLength"] = field.min_length
 
+    # Handle allow_blank by setting minLength constraint
+    if hasattr(field, "allow_blank") and not field.allow_blank:
+        # Only set if no explicit min_length is set or if min_length < 1
+        current_min_length = getattr(field, "min_length", None)
+        if current_min_length is None or current_min_length < 1:
+            schema["minLength"] = 1
+
     # Apply default value if present
     if hasattr(field, "default") and field.default is not serializers.empty:
         # Convert callable defaults to their values

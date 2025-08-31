@@ -39,7 +39,8 @@ class TestFieldToJsonSchema(unittest.TestCase):
 
         self.assertEqual(schema["type"], "string")
         self.assertNotIn("maxLength", schema)
-        self.assertNotIn("minLength", schema)
+        # CharField with default allow_blank=False should have minLength: 1
+        self.assertEqual(schema["minLength"], 1)
 
     def test_integer_field(self):
         """Test IntegerField conversion."""
@@ -960,6 +961,96 @@ class TestSchemaRequiredFields(unittest.TestCase):
         # unique field with blank and null should also allow null
         self.assertEqual(
             schema["properties"]["unique_with_blank_null"]["type"], ["string", "null"]
+        )
+
+    def test_allow_blank_fields(self):
+        """Test that allow_blank fields are properly represented with minLength."""
+
+        class BlankTestSerializer(serializers.Serializer):
+            # Standard fields without allow_blank (default is allow_blank=False)
+            string_no_blank = serializers.CharField()
+            email_no_blank = serializers.EmailField()
+            url_no_blank = serializers.URLField()
+
+            # Fields with allow_blank=True (should not have minLength: 1)
+            string_allow_blank = serializers.CharField(allow_blank=True)
+            email_allow_blank = serializers.EmailField(allow_blank=True)
+            url_allow_blank = serializers.URLField(allow_blank=True)
+
+            # Fields with explicit min_length (should preserve that, not add minLength: 1)
+            string_min_length_3 = serializers.CharField(min_length=3, allow_blank=False)
+            string_min_length_0_no_blank = serializers.CharField(
+                min_length=0, allow_blank=False
+            )
+
+            # Combined with other options
+            string_blank_optional = serializers.CharField(
+                allow_blank=True, required=False
+            )
+            string_blank_with_null = serializers.CharField(
+                allow_blank=True, allow_null=True
+            )
+            string_no_blank_with_null = serializers.CharField(
+                allow_blank=False, allow_null=True
+            )
+
+        serializer = BlankTestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        # Test non-blank fields have minLength: 1 when no explicit min_length is set
+        self.assertEqual(schema["properties"]["string_no_blank"]["minLength"], 1)
+        self.assertEqual(schema["properties"]["email_no_blank"]["minLength"], 1)
+        self.assertEqual(schema["properties"]["url_no_blank"]["minLength"], 1)
+
+        # Test allow_blank fields do NOT have minLength constraint
+        self.assertNotIn("minLength", schema["properties"]["string_allow_blank"])
+        self.assertNotIn("minLength", schema["properties"]["email_allow_blank"])
+        self.assertNotIn("minLength", schema["properties"]["url_allow_blank"])
+
+        # Test explicit min_length is preserved, not overridden
+        self.assertEqual(schema["properties"]["string_min_length_3"]["minLength"], 3)
+        # min_length=0 with allow_blank=False should become minLength: 1
+        self.assertEqual(
+            schema["properties"]["string_min_length_0_no_blank"]["minLength"], 1
+        )
+
+        # Test combined options
+        self.assertNotIn("minLength", schema["properties"]["string_blank_optional"])
+        self.assertNotIn("minLength", schema["properties"]["string_blank_with_null"])
+        self.assertEqual(
+            schema["properties"]["string_no_blank_with_null"]["minLength"], 1
+        )
+        self.assertEqual(
+            schema["properties"]["string_no_blank_with_null"]["type"],
+            ["string", "null"],
+        )
+
+        # Other properties should be preserved
+        self.assertEqual(schema["properties"]["email_allow_blank"]["format"], "email")
+        self.assertEqual(schema["properties"]["url_allow_blank"]["format"], "uri")
+
+    def test_model_serializer_allow_blank(self):
+        """Test that ModelSerializer correctly handles allow_blank from model fields."""
+        from .models import RequiredFieldsTestModel
+
+        class ModelBlankTestSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = RequiredFieldsTestModel
+                fields = ["basic_required", "with_blank", "with_blank_and_null"]
+
+        serializer = ModelBlankTestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        # basic_required (no blank) should have minLength: 1
+        self.assertEqual(schema["properties"]["basic_required"]["minLength"], 1)
+
+        # with_blank (CharField with blank=True) should not have minLength
+        self.assertNotIn("minLength", schema["properties"]["with_blank"])
+
+        # with_blank_and_null should allow both blank and null
+        self.assertNotIn("minLength", schema["properties"]["with_blank_and_null"])
+        self.assertEqual(
+            schema["properties"]["with_blank_and_null"]["type"], ["string", "null"]
         )
 
 
