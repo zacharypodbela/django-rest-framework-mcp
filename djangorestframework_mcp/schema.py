@@ -104,10 +104,10 @@ def get_choice_field_schema(field: serializers.ChoiceField) -> Dict[str, Any]:
 
     # MCP protocol requires enum values to be strings and type to be "string"
     # DRF will automatically convert string inputs back to original types
-    schema = {"type": "string"}
+    schema: Dict[str, Any] = {"type": "string"}
 
     # Convert all enum values to strings for MCP compliance
-    schema["enum"] = [str(val) for val in choice_values]  # type: ignore[assignment]
+    schema["enum"] = [str(val) for val in choice_values]
 
     # Add description with choice display names if they differ from values
     display_names = [str(display) for display in flat_choices.values()]
@@ -134,11 +134,11 @@ def get_multiple_choice_field_schema(
     choice_schema = get_choice_field_schema(field)
 
     # Wrap in array schema
-    schema = {"type": "array", "items": choice_schema}
+    schema: Dict[str, Any] = {"type": "array", "items": choice_schema}
 
     # Add minItems constraint if allow_empty is False
     if not getattr(field, "allow_empty", True):
-        schema["minItems"] = 1  # type: ignore[assignment]
+        schema["minItems"] = 1
 
     return schema
 
