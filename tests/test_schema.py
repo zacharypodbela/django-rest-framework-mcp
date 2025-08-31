@@ -724,6 +724,147 @@ class TestReadOnlyFieldHandling(unittest.TestCase):
         self.assertIn("value", schema["required"])
 
 
+class TestSchemaRequiredFields(unittest.TestCase):
+    """Test that schema correctly determines required fields for different serializer types."""
+
+    def test_model_serializer_required_fields(self):
+        """Test all cases of required field determination for ModelSerializer."""
+        from .models import RequiredFieldsTestModel
+
+        class TestSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = RequiredFieldsTestModel
+                fields = [
+                    "basic_required",
+                    "with_default",
+                    "with_blank",
+                    "with_null",
+                    "with_blank_and_null",
+                    "bool_with_default",
+                    "unique_with_blank_null",
+                    "unique_no_blank",
+                    "unique_with_default",
+                    "auto_field",
+                    "created_at",
+                    "updated_at",
+                ]
+
+        serializer = TestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        # Check which fields are marked as required
+        required_fields = set(schema.get("required", []))
+
+        # Case 1: Basic field without blank/null/default should be required
+        self.assertIn("basic_required", required_fields)
+
+        # Case 2: Field with default should NOT be required
+        self.assertNotIn("with_default", required_fields)
+
+        # Case 3: Field with blank=True should NOT be required
+        self.assertNotIn("with_blank", required_fields)
+
+        # Case 4: Field with null=True should NOT be required
+        self.assertNotIn("with_null", required_fields)
+
+        # Case 5: Field with both blank and null should NOT be required
+        self.assertNotIn("with_blank_and_null", required_fields)
+
+        # Case 6: BooleanField with default should NOT be required
+        self.assertNotIn("bool_with_default", required_fields)
+
+        # Case 7: Unique field with blank/null should NOT be required
+        self.assertNotIn("unique_with_blank_null", required_fields)
+
+        # Case 7b: Unique field without blank/null SHOULD be required
+        self.assertIn("unique_no_blank", required_fields)
+
+        # Case 8: Unique field WITH default should NOT be required
+        self.assertNotIn("unique_with_default", required_fields)
+
+        # Cases 9-11: Read-only fields should not be in properties at all
+        self.assertNotIn("auto_field", schema["properties"])
+        self.assertNotIn("created_at", schema["properties"])
+        self.assertNotIn("updated_at", schema["properties"])
+
+    def test_explicit_required_override(self):
+        """Test that explicit required=True/False overrides model field settings."""
+        from .models import RequiredFieldsTestModel
+
+        class ExplicitSerializer(serializers.ModelSerializer):
+            # Explicitly mark a normally optional field as required
+            with_blank = serializers.CharField(required=True)
+            # Explicitly mark a normally required field as optional
+            basic_required = serializers.CharField(required=False)
+
+            class Meta:
+                model = RequiredFieldsTestModel
+                fields = ["basic_required", "with_blank"]
+
+        serializer = ExplicitSerializer()
+        schema = get_serializer_schema(serializer)
+        required_fields = set(schema.get("required", []))
+
+        # with_blank should now be required due to explicit override
+        self.assertIn("with_blank", required_fields)
+
+        # basic_required should NOT be required due to explicit override
+        self.assertNotIn("basic_required", required_fields)
+
+    def test_base_serializer_required_fields(self):
+        """Test required field determination for regular Serializer (not ModelSerializer)."""
+
+        class BaseTestSerializer(serializers.Serializer):
+            # Default behavior - required=True
+            default_required = serializers.CharField()
+
+            # Explicitly required
+            explicit_required = serializers.CharField(required=True)
+
+            # Explicitly optional
+            explicit_optional = serializers.CharField(required=False)
+
+            # With default value - automatically becomes optional in DRF
+            # (DRF doesn't even allow default + required=True)
+            with_default = serializers.CharField(default="default")
+
+            # Boolean with default - automatically optional
+            bool_with_default = serializers.BooleanField(default=True)
+
+            # Read-only field (should not appear in schema)
+            read_only_field = serializers.CharField(read_only=True)
+
+            # allow_blank makes it accept empty strings but doesn't affect required
+            allow_blank_field = serializers.CharField(allow_blank=True)
+
+            # allow_null makes it accept None but doesn't affect required
+            allow_null_field = serializers.IntegerField(allow_null=True)
+
+        serializer = BaseTestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        required_fields = set(schema.get("required", []))
+
+        # Test default behavior - fields are required by default
+        self.assertIn("default_required", required_fields)
+        self.assertIn("explicit_required", required_fields)
+
+        # Test explicitly optional fields
+        self.assertNotIn("explicit_optional", required_fields)
+
+        # In DRF, fields with defaults automatically become optional
+        # You cannot have both default and required=True
+        self.assertNotIn("with_default", required_fields)
+        self.assertNotIn("bool_with_default", required_fields)
+
+        # Read-only fields should not appear in schema at all
+        self.assertNotIn("read_only_field", schema["properties"])
+
+        # allow_blank and allow_null don't affect required status
+        self.assertIn("allow_blank_field", required_fields)
+        self.assertIn("allow_null_field", required_fields)
+
+
 class TestListSerializerSchemaGeneration(unittest.TestCase):
     """Test schema generation for list serializers."""
 
