@@ -1754,5 +1754,181 @@ class TestRelationshipFieldsInSerializers(unittest.TestCase):
         self.assertEqual(schema["properties"]["category_id"]["type"], "integer")
 
 
+class TestChoiceFieldSchemas(unittest.TestCase):
+    """Test schema generation for ChoiceField and MultipleChoiceField."""
+
+    def test_choice_field_with_string_choices(self):
+        """Test ChoiceField with simple string choices."""
+        field = serializers.ChoiceField(choices=["draft", "published", "archived"])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["draft", "published", "archived"])
+
+    def test_choice_field_with_integer_choices(self):
+        """Test ChoiceField with integer choices."""
+        field = serializers.ChoiceField(choices=[1, 2, 3])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["1", "2", "3"])
+
+    def test_choice_field_with_mixed_type_choices(self):
+        """Test ChoiceField with mixed type choices."""
+        field = serializers.ChoiceField(choices=[1, "two", 3.0])
+        schema = field_to_json_schema(field)
+
+        # All enum values are converted to strings for MCP compliance
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["1", "two", "3.0"])
+
+    def test_choice_field_with_paired_choices(self):
+        """Test ChoiceField with (value, display) pairs."""
+        choices = [
+            ("draft", "Draft Status"),
+            ("published", "Published Status"),
+            ("archived", "Archived Status"),
+        ]
+        field = serializers.ChoiceField(choices=choices)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["draft", "published", "archived"])
+        # Should include clear key-value mappings
+        self.assertIn("description", schema)
+        self.assertIn('"draft" = Draft Status', schema["description"])
+        self.assertIn('"published" = Published Status', schema["description"])
+        self.assertIn('"archived" = Archived Status', schema["description"])
+
+    def test_choice_field_with_integer_paired_choices(self):
+        """Test ChoiceField with integer (value, display) pairs."""
+        choices = [(1, "First"), (2, "Second"), (3, "Third")]
+        field = serializers.ChoiceField(choices=choices)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["1", "2", "3"])
+
+    def test_choice_field_with_grouped_choices(self):
+        """Test ChoiceField with grouped choices."""
+        choices = [
+            ("Status", [("draft", "Draft"), ("published", "Published")]),
+            ("Type", [("article", "Article"), ("page", "Page")]),
+        ]
+        field = serializers.ChoiceField(choices=choices)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        # Should flatten grouped choices (all strings already)
+        self.assertEqual(set(schema["enum"]), {"draft", "published", "article", "page"})
+
+    def test_choice_field_with_allow_blank(self):
+        """Test ChoiceField with allow_blank=True."""
+        field = serializers.ChoiceField(
+            choices=["draft", "published"], allow_blank=True
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["draft", "published", ""])
+
+    def test_choice_field_with_default(self):
+        """Test ChoiceField with default value."""
+        field = serializers.ChoiceField(choices=["draft", "published"], default="draft")
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["default"], "draft")
+
+    def test_multiple_choice_field_basic(self):
+        """Test MultipleChoiceField with string choices."""
+        field = serializers.MultipleChoiceField(choices=["tag1", "tag2", "tag3"])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["enum"], ["tag1", "tag2", "tag3"])
+
+    def test_multiple_choice_field_with_integer_choices(self):
+        """Test MultipleChoiceField with integer choices."""
+        field = serializers.MultipleChoiceField(choices=[1, 2, 3])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["enum"], ["1", "2", "3"])
+
+    def test_multiple_choice_field_with_allow_empty_false(self):
+        """Test MultipleChoiceField with allow_empty=False."""
+        field = serializers.MultipleChoiceField(
+            choices=["tag1", "tag2", "tag3"], allow_empty=False
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["minItems"], 1)
+
+    def test_multiple_choice_field_with_allow_empty_true(self):
+        """Test MultipleChoiceField with allow_empty=True (default)."""
+        field = serializers.MultipleChoiceField(choices=["tag1", "tag2", "tag3"])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertNotIn("minItems", schema)
+
+    def test_multiple_choice_field_with_paired_choices(self):
+        """Test MultipleChoiceField with (value, display) pairs."""
+        choices = [("python", "Python"), ("javascript", "JavaScript"), ("java", "Java")]
+        field = serializers.MultipleChoiceField(choices=choices)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["enum"], ["python", "javascript", "java"])
+
+    def test_multiple_choice_field_with_grouped_choices(self):
+        """Test MultipleChoiceField with grouped choices."""
+        choices = [
+            ("Languages", [("python", "Python"), ("javascript", "JavaScript")]),
+            ("Frameworks", [("django", "Django"), ("react", "React")]),
+        ]
+        field = serializers.MultipleChoiceField(choices=choices)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        # Should flatten grouped choices
+        self.assertEqual(
+            set(schema["items"]["enum"]), {"python", "javascript", "django", "react"}
+        )
+
+    def test_multiple_choice_field_with_help_text(self):
+        """Test MultipleChoiceField with help_text."""
+        field = serializers.MultipleChoiceField(
+            choices=["tag1", "tag2", "tag3"], help_text="Select multiple tags"
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertIn("description", schema)
+        self.assertIn("Select multiple tags", schema["description"])
+
+    def test_choice_field_with_empty_choices(self):
+        """Test ChoiceField with empty choices list."""
+        field = serializers.ChoiceField(choices=[])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], [])  # Empty enum to show no values are valid
+        self.assertNotIn("description", schema)  # No description for empty choices
+
+    def test_multiple_choice_field_with_empty_choices(self):
+        """Test MultipleChoiceField with empty choices list."""
+        field = serializers.MultipleChoiceField(choices=[])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["enum"], [])  # Empty enum in items
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -90,6 +90,59 @@ def get_time_schema(field: serializers.TimeField) -> Dict[str, Any]:
     return schema
 
 
+def get_choice_field_schema(field: serializers.ChoiceField) -> Dict[str, Any]:
+    """Generate schema for ChoiceField."""
+    # Get the flat choices dict (handles grouped choices)
+    flat_choices = field.choices
+
+    # Extract choice values (ignore display text)
+    choice_values = list(flat_choices.keys())
+
+    # Add blank option if allow_blank is True
+    if getattr(field, "allow_blank", False):
+        choice_values.append("")
+
+    # MCP protocol requires enum values to be strings and type to be "string"
+    # DRF will automatically convert string inputs back to original types
+    schema = {"type": "string"}
+
+    # Convert all enum values to strings for MCP compliance
+    schema["enum"] = [str(val) for val in choice_values]  # type: ignore[assignment]
+
+    # Add description with choice display names if they differ from values
+    display_names = [str(display) for display in flat_choices.values()]
+    if display_names and any(
+        str(val) != display for val, display in zip(choice_values, display_names)
+    ):
+        # Create clear key-value mappings: "1" = Low Priority, "2" = Medium Priority
+        mappings = [
+            f'"{str(val)}" = {display}'
+            for val, display in zip(choice_values, display_names)
+            if str(val) != display
+        ]
+        if mappings:
+            schema["description"] = f"Valid choices: {', '.join(mappings)}"
+
+    return schema
+
+
+def get_multiple_choice_field_schema(
+    field: serializers.MultipleChoiceField,
+) -> Dict[str, Any]:
+    """Generate schema for MultipleChoiceField."""
+    # Get the choice schema from the parent ChoiceField logic
+    choice_schema = get_choice_field_schema(field)
+
+    # Wrap in array schema
+    schema = {"type": "array", "items": choice_schema}
+
+    # Add minItems constraint if allow_empty is False
+    if not getattr(field, "allow_empty", True):
+        schema["minItems"] = 1  # type: ignore[assignment]
+
+    return schema
+
+
 def get_primary_key_related_field_schema(
     field: serializers.PrimaryKeyRelatedField,
 ) -> Dict[str, Any]:
@@ -226,7 +279,7 @@ def get_list_serializer_schema(
 
 # Field type registry - maps DRF field classes to their schema generator functions
 # These are checked in order. If a class inherits from another in the list, its important the subclass be first or it will
-# never be choosen. (Ex: ListSerializer inherits from BaseSerializer)
+# never be choosen. (Ex: ListSerializer inherits from BaseSerializer; MultipleChoiceField inherits from ChoiceField)
 FIELD_TYPE_REGISTRY = {
     serializers.BooleanField: get_boolean_schema,
     serializers.IntegerField: get_integer_schema,
@@ -239,6 +292,8 @@ FIELD_TYPE_REGISTRY = {
     serializers.DateTimeField: get_datetime_schema,
     serializers.DateField: get_date_schema,
     serializers.TimeField: get_time_schema,
+    serializers.MultipleChoiceField: get_multiple_choice_field_schema,
+    serializers.ChoiceField: get_choice_field_schema,
     serializers.PrimaryKeyRelatedField: get_primary_key_related_field_schema,
     serializers.SlugRelatedField: get_slug_related_field_schema,
     serializers.HyperlinkedRelatedField: get_hyperlinked_related_field_schema,
