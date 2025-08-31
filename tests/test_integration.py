@@ -2300,10 +2300,10 @@ class RelationshipFieldIntegrationTests(TestCase):
         create_products = next(t for t in tools if t["name"] == "create_slugproducts")
         body_schema = create_products["inputSchema"]["properties"]["body"]
 
-        # Check category_slug field is present and correct type
+        # Check category_slug field is present and correct type (allows null due to allow_null=True)
         self.assertIn("category_slug", body_schema["properties"])
         category_field = body_schema["properties"]["category_slug"]
-        self.assertEqual(category_field["type"], "string")
+        self.assertEqual(category_field["type"], ["string", "null"])
 
         # Find create_productwithtags tool
         create_tags = next(t for t in tools if t["name"] == "create_taggedproducts")

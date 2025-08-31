@@ -329,6 +329,13 @@ def field_to_json_schema(field: Field) -> Dict[str, Any]:
         else:
             schema["description"] = field.help_text
 
+    # Handle allow_null by converting type to array with null
+    if hasattr(field, "allow_null") and field.allow_null:
+        current_type = schema.get("type")
+        if current_type and current_type != "null":
+            # Convert single type to array with null
+            schema["type"] = [current_type, "null"]
+
     return schema
 
 

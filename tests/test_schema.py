@@ -864,6 +864,104 @@ class TestSchemaRequiredFields(unittest.TestCase):
         self.assertIn("allow_blank_field", required_fields)
         self.assertIn("allow_null_field", required_fields)
 
+    def test_allow_null_fields(self):
+        """Test that allow_null fields are properly represented in JSON Schema."""
+
+        class NullTestSerializer(serializers.Serializer):
+            # Standard field types without allow_null
+            string_no_null = serializers.CharField()
+            int_no_null = serializers.IntegerField()
+            bool_no_null = serializers.BooleanField()
+
+            # Fields with allow_null=True
+            string_allow_null = serializers.CharField(allow_null=True)
+            int_allow_null = serializers.IntegerField(allow_null=True)
+            bool_allow_null = serializers.BooleanField(allow_null=True)
+
+            # Combined with other options
+            string_null_optional = serializers.CharField(
+                allow_null=True, required=False
+            )
+            string_null_with_default = serializers.CharField(
+                allow_null=True, default="default"
+            )
+
+            # Email and URL fields with allow_null
+            email_allow_null = serializers.EmailField(allow_null=True)
+            url_allow_null = serializers.URLField(allow_null=True)
+
+        serializer = NullTestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        # Test non-null fields have simple types
+        self.assertEqual(schema["properties"]["string_no_null"]["type"], "string")
+        self.assertEqual(schema["properties"]["int_no_null"]["type"], "integer")
+        self.assertEqual(schema["properties"]["bool_no_null"]["type"], "boolean")
+
+        # Test allow_null fields have array types with null
+        self.assertEqual(
+            schema["properties"]["string_allow_null"]["type"], ["string", "null"]
+        )
+        self.assertEqual(
+            schema["properties"]["int_allow_null"]["type"], ["integer", "null"]
+        )
+        self.assertEqual(
+            schema["properties"]["bool_allow_null"]["type"], ["boolean", "null"]
+        )
+
+        # Test combined options still work
+        self.assertEqual(
+            schema["properties"]["string_null_optional"]["type"], ["string", "null"]
+        )
+        self.assertEqual(
+            schema["properties"]["string_null_with_default"]["type"], ["string", "null"]
+        )
+
+        # Test special field types with allow_null
+        self.assertEqual(
+            schema["properties"]["email_allow_null"]["type"], ["string", "null"]
+        )
+        self.assertEqual(
+            schema["properties"]["url_allow_null"]["type"], ["string", "null"]
+        )
+
+        # Format should still be preserved for special fields
+        self.assertEqual(schema["properties"]["email_allow_null"]["format"], "email")
+        self.assertEqual(schema["properties"]["url_allow_null"]["format"], "uri")
+
+        # Required status should be unaffected by allow_null
+        required_fields = set(schema.get("required", []))
+        self.assertIn("string_allow_null", required_fields)
+        self.assertIn("int_allow_null", required_fields)
+        self.assertIn("bool_allow_null", required_fields)
+        self.assertNotIn("string_null_optional", required_fields)
+        self.assertNotIn("string_null_with_default", required_fields)
+
+    def test_model_serializer_allow_null(self):
+        """Test that ModelSerializer correctly handles allow_null from model fields."""
+        from .models import RequiredFieldsTestModel
+
+        class ModelNullTestSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = RequiredFieldsTestModel
+                fields = ["with_null", "with_blank_and_null", "unique_with_blank_null"]
+
+        serializer = ModelNullTestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        # with_null (IntegerField with null=True) should allow null
+        self.assertEqual(schema["properties"]["with_null"]["type"], ["integer", "null"])
+
+        # with_blank_and_null (CharField with both) should allow null
+        self.assertEqual(
+            schema["properties"]["with_blank_and_null"]["type"], ["string", "null"]
+        )
+
+        # unique field with blank and null should also allow null
+        self.assertEqual(
+            schema["properties"]["unique_with_blank_null"]["type"], ["string", "null"]
+        )
+
 
 class TestListSerializerSchemaGeneration(unittest.TestCase):
     """Test schema generation for list serializers."""
@@ -1508,9 +1606,11 @@ class TestRelationshipFieldsInSerializers(unittest.TestCase):
 
         schema = get_serializer_schema(ProductSerializer())
 
-        # Should include category_slug as string
+        # Should include category_slug as string array with null (since allow_null=True)
         self.assertIn("category_slug", schema["properties"])
-        self.assertEqual(schema["properties"]["category_slug"]["type"], "string")
+        self.assertEqual(
+            schema["properties"]["category_slug"]["type"], ["string", "null"]
+        )
 
     def test_serializer_with_hyperlinked_relationship(self):
         """Test serializer using HyperlinkedRelatedField."""
