@@ -10,6 +10,13 @@ class PostSerializer(serializers.ModelSerializer):
         source="author",
         queryset=User.objects.all(),
     )
+    category = serializers.ChoiceField(
+        choices=Post.CATEGORY_CHOICES,
+        required=False,
+        allow_null=True,
+        help_text="Select a single category for this post",
+        label="Post Category",
+    )
 
     class Meta:
         model = Post
@@ -19,6 +26,7 @@ class PostSerializer(serializers.ModelSerializer):
             "content",
             "author",
             "author_id",
+            "category",
             "created_at",
             "updated_at",
         ]
@@ -42,6 +50,7 @@ class CreatePostSerializer(PostSerializer):
             "add_created_on_footer",
             "author",
             "author_id",
+            "category",
             "created_at",
             "updated_at",
         ]
