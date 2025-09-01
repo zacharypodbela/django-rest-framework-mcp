@@ -169,7 +169,7 @@ def get_duration_field_schema(field: serializers.DurationField) -> Dict[str, Any
 
     from django.utils.duration import duration_iso_string
 
-    schema: Dict[str, Any] = {
+    schema = {
         "type": "string",
         "format": "duration",
         "description": "ISO 8601 duration format (e.g., 'P1DT2H3M4S' for 1 day, 2 hours, 3 minutes, 4 seconds)",
@@ -479,7 +479,13 @@ def field_to_json_schema(field: Field) -> Dict[str, Any]:
         schema["minLength"] = field.min_length
 
     # Handle allow_blank by setting minLength constraint
-    if hasattr(field, "allow_blank") and not field.allow_blank:
+    if (
+        hasattr(field, "allow_blank")
+        and not field.allow_blank
+        and not isinstance(
+            field, serializers.ChoiceField
+        )  # For ChoiceField, allow_blank is handled by adding "" to list of enum values
+    ):
         # Only set if no explicit min_length is set or if min_length < 1
         current_min_length = getattr(field, "min_length", None)
         if current_min_length is None or current_min_length < 1:
