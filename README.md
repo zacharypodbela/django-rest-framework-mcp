@@ -489,11 +489,7 @@ class CustomerMCPTests(TestCase):
 
 - Browsable UI of MCP tool, resource, and prompts discovery and invocation
 
-- Decorate custom validators with instructions (which will be shared with the MCP Client)
-
-- Arrays/objects/JSONB fields
-
-- Enum fields
+- Support for specifying instructions for LLM when using custom validators
 
 - Support for other kwargs besides the lookup_url_kwarg.
 
@@ -513,19 +509,11 @@ class CustomerMCPTests(TestCase):
 
 - Versioning (URLPathVersioning/NamespaceVersioning/AcceptHeaderVersioning/HostNameVersioning)
 
-- Non-JSON Inputs (FormParser/MultiPartParser/FileUploadParser) [Not sure if this is even possible]
+- File Fields / `multipart/form-data` (FileField/ImageField/etc.)
 
-- Advertising custom headers, kwargs to MCP Clients
+- Advertising additional headers to MCP Clients
 
 - Standalone stdio MCP server
-
-- HyperlinkedModelSerializer, HyperlinkedIdentityField support [It might actually make most sense to do something like this as the default when we get to supporting Relationships. Giving the LLM the context on the relevant tools it can use to operate on the object along with it's FK / info.]
-
-- Custom classes - pagination, permission, authentication, etc.
-
-- Object-level permissions (DjangoObjectPermissions)
-
-- Model permissions (DjangoModelPermissions)
 
 - Depth-based serialization support
 
@@ -534,8 +522,6 @@ class CustomerMCPTests(TestCase):
 - Async views/endpoints support
 
 - Streaming responses [Not sure if this is even possible]
-
-- Caching headers support
 
 ## API Reference
 
