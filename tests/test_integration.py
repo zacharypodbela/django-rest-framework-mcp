@@ -2516,13 +2516,104 @@ class ChoiceFieldIntegrationTests(TestCase):
         self.assertEqual(tags_field["items"]["type"], "string")
         self.assertEqual(set(tags_field["items"]["enum"]), {"bug", "feature", "docs"})
 
-    # Note: API validation tests omitted as they require proper model backing
-    # The core functionality (schema generation with enum constraints) is fully tested
-    # and working correctly in the schema tests above
 
 
-# NOTE: RegexField integration tests were removed due to ViewSet registration issues
-# The unit tests in test_schema.py provide comprehensive coverage of RegexField functionality
+class TestRegexFieldsIntegration(MCPTestCase):
+    """Integration tests for RegexField, SlugField, and IPAddressField."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        super().setUp()
+
+        # Create serializers with regex-based fields
+        class PhoneSerializer(serializers.Serializer):
+            """Serializer with RegexField for phone numbers."""
+
+            phone = serializers.RegexField(regex=r"^\+?1?\d{9,15}$", max_length=17)
+
+        class ArticleSerializer(serializers.Serializer):
+            """Serializer with SlugField."""
+
+            slug = serializers.SlugField(max_length=50)
+
+        class ServerSerializer(serializers.Serializer):
+            """Serializer with IPAddressField."""
+
+            ip_address = serializers.IPAddressField()
+
+        # Register ViewSets with the serializers
+        @mcp_viewset(basename="phones")
+        class PhoneViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin):
+            serializer_class = PhoneSerializer
+
+        @mcp_viewset(basename="articles")
+        class ArticleViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin):
+            serializer_class = ArticleSerializer
+
+        @mcp_viewset(basename="servers")
+        class ServerViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin):
+            serializer_class = ServerSerializer
+
+        # Store viewsets for cleanup
+        self.viewsets = [PhoneViewSet, ArticleViewSet, ServerViewSet]
+
+        # Create test client
+        self.client = MCPClient()
+
+    def tearDown(self):
+        """Clean up registered viewsets."""
+        registry.clear()
+        super().tearDown()
+
+    def test_regex_field_schema(self):
+        """Test that RegexField generates string schema with pattern."""
+        result = self.client.list_tools()
+        tools = result["tools"]
+
+        # Find the phone tool
+        phone_tool = next(t for t in tools if t["name"] == "create_phones")
+        body_schema = phone_tool["inputSchema"]["properties"]["body"]
+
+        # Check phone field has regex pattern
+        self.assertIn("phone", body_schema["properties"])
+        phone_field = body_schema["properties"]["phone"]
+        self.assertEqual(phone_field["type"], "string")
+        self.assertEqual(phone_field["pattern"], r"^\+?1?\d{9,15}$")
+        self.assertEqual(phone_field["maxLength"], 17)
+
+    def test_slug_field_schema(self):
+        """Test that SlugField generates string schema with slug pattern."""
+        result = self.client.list_tools()
+        tools = result["tools"]
+
+        # Find the article tool
+        article_tool = next(t for t in tools if t["name"] == "create_articles")
+        body_schema = article_tool["inputSchema"]["properties"]["body"]
+
+        # Check slug field has appropriate pattern
+        self.assertIn("slug", body_schema["properties"])
+        slug_field = body_schema["properties"]["slug"]
+        self.assertEqual(slug_field["type"], "string")
+        # SlugField should have a pattern for slug validation
+        self.assertIn("pattern", slug_field)
+        self.assertEqual(slug_field["maxLength"], 50)
+
+    def test_ip_address_field_schema(self):
+        """Test that IPAddressField generates string schema with description."""
+        result = self.client.list_tools()
+        tools = result["tools"]
+
+        # Find the server tool
+        server_tool = next(t for t in tools if t["name"] == "create_servers")
+        body_schema = server_tool["inputSchema"]["properties"]["body"]
+
+        # Check ip_address field has description (no pattern for IP fields)
+        self.assertIn("ip_address", body_schema["properties"])
+        ip_field = body_schema["properties"]["ip_address"]
+        self.assertEqual(ip_field["type"], "string")
+        # IPAddressField uses function validators, not regex, so should have description
+        self.assertIn("description", ip_field)
+        self.assertIn("IPv", ip_field["description"])  # Should mention IPv4 or IPv6
 
 
 class TestCompositeFieldsIntegration(MCPTestCase):
