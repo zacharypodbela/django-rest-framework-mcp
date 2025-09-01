@@ -3,13 +3,11 @@
 import base64
 import json
 
-from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.authentication import (
     TokenAuthentication,
 )
-from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -18,6 +16,15 @@ from djangorestframework_mcp.decorators import mcp_tool, mcp_viewset
 from djangorestframework_mcp.registry import registry
 from djangorestframework_mcp.test import MCPClient
 
+from .factories import (
+    CategoryFactory,
+    CustomerFactory,
+    OrderFactory,
+    ProductFactory,
+    TagFactory,
+    TokenFactory,
+    UserFactory,
+)
 from .models import Category, Customer, Order, Product, Tag
 from .views import (
     AuthenticatedViewSet,
@@ -89,10 +96,10 @@ class MCPToolExecutionTests(MCPTestCase):
         # Initialize MCP client for all tests
         self.client = MCPClient()
         # Create test data
-        self.customer1 = Customer.objects.create(
+        self.customer1 = CustomerFactory(
             name="Alice Smith", email="alice@example.com", age=30, is_active=True
         )
-        self.customer2 = Customer.objects.create(
+        self.customer2 = CustomerFactory(
             name="Bob Jones", email="bob@example.com", age=25, is_active=False
         )
 
@@ -314,7 +321,7 @@ class MCPLegacyContentTests(MCPTestCase):
         # Initialize MCP client for all tests
         self.client = MCPClient()
         # Create test data
-        self.customer = Customer.objects.create(
+        self.customer = CustomerFactory(
             name="Test Customer", email="test@example.com", age=25, is_active=True
         )
 
@@ -574,7 +581,7 @@ class MCPProtocolTests(MCPTestCase):
         client = Client()
 
         # Create test customer first
-        Customer.objects.create(name="Test Customer", email="test@example.com", age=30)
+        CustomerFactory(name="Test Customer", email="test@example.com", age=30)
 
         request_data = {
             "jsonrpc": "2.0",
@@ -641,9 +648,7 @@ class MCPProtocolTests(MCPTestCase):
         client = Client()
 
         # Create customer with email
-        Customer.objects.create(
-            name="Existing Customer", email="existing@example.com", age=25
-        )
+        CustomerFactory(name="Existing Customer", email="existing@example.com", age=25)
 
         request_data = {
             "jsonrpc": "2.0",
@@ -689,10 +694,10 @@ class TestMCPRequestConditionalLogic(MCPTestCase):
         registry.clear()
 
         # Create test data
-        self.active_customer = Customer.objects.create(
+        self.active_customer = CustomerFactory(
             name="Active Customer", email="active@example.com", age=30, is_active=True
         )
-        self.inactive_customer = Customer.objects.create(
+        self.inactive_customer = CustomerFactory(
             name="Inactive Customer",
             email="inactive@example.com",
             age=25,
@@ -1152,8 +1157,10 @@ class AuthenticationIntegrationTests(MCPTestCase):
     def setUp(self):
         """Set up test data."""
         super().setUp()
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
         self.client = MCPClient()
 
     def test_tools_list_requires_authentication(self):
@@ -1202,7 +1209,7 @@ class AuthenticationIntegrationTests(MCPTestCase):
         from django.test import Client
 
         # Create test customer
-        Customer.objects.create(
+        CustomerFactory(
             name="API Test Customer",
             email="apitest@example.com",
             age=30,
@@ -1245,8 +1252,10 @@ class ViewSetAuthenticationTests(TestCase):
         registry.register_viewset(CustomPermissionViewSet)
 
         # Create test user and token
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
 
         self.client = MCPClient()
 
@@ -1458,14 +1467,16 @@ class MixedAuthenticationTests(TestCase):
         registry.clear()
 
         # Create test user and token
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
 
         # Create a second user for permission testing
-        self.other_user = User.objects.create_user(
-            "otheruser", "other@example.com", "otherpass"
+        self.other_user = UserFactory(
+            username="otheruser", email="other@example.com", password="otherpass"
         )
-        self.other_token = Token.objects.create(user=self.other_user)
+        self.other_token = TokenFactory(user=self.other_user)
 
     def tearDown(self):
         """Clean up after each test."""
@@ -1654,8 +1665,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
         registry.register_viewset(CustomPermissionViewSet)
 
         # Create test user and token
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
 
     def tearDown(self):
         """Clean up after each test."""
@@ -1883,10 +1896,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
                 # Simulate retrieving an object owned by a different user
                 from types import SimpleNamespace
 
-                from django.contrib.auth.models import User
-
-                other_user = User.objects.create_user(
-                    "otheruser", "other@example.com", "otherpass"
+                other_user = UserFactory(
+                    username="otheruser",
+                    email="other@example.com",
+                    password="otherpass",
                 )
                 obj = SimpleNamespace(user=other_user, id=pk)
                 self.check_object_permissions(request, obj)
@@ -1956,72 +1969,6 @@ class Return200ForErrorsIntegrationTests(TestCase):
         return request
 
 
-# Relationship field test serializers and viewsets
-class OrderSerializer(serializers.ModelSerializer):
-    """Serializer for Order model with PrimaryKeyRelatedField."""
-
-    class Meta:
-        model = Order
-        fields = ["id", "customer", "total", "created_at"]
-        read_only_fields = ["created_at"]
-
-
-class ProductSerializer(serializers.ModelSerializer):
-    """Serializer for Product model with SlugRelatedField."""
-
-    category_slug = serializers.SlugRelatedField(
-        queryset=Category.objects.all(),
-        slug_field="slug",
-        source="category",
-        allow_null=True,
-    )
-
-    class Meta:
-        model = Product
-        fields = [
-            "id",
-            "name",
-            "description",
-            "price",
-            "in_stock",
-            "category_slug",
-            "slug",
-        ]
-
-
-class ProductWithTagsSerializer(serializers.ModelSerializer):
-    """Serializer with ManyToMany relationship using PrimaryKeyRelatedField."""
-
-    tags = serializers.PrimaryKeyRelatedField(
-        queryset=Tag.objects.all(), many=True, required=False
-    )
-
-    class Meta:
-        model = Product
-        fields = ["id", "name", "price", "tags"]
-
-
-class OrderViewSet(viewsets.ModelViewSet):
-    """ViewSet for Order with ForeignKey relationship."""
-
-    queryset = Order.objects.all()
-    serializer_class = OrderSerializer
-
-
-class SlugProductViewSet(viewsets.ModelViewSet):
-    """ViewSet for Product with SlugRelatedField."""
-
-    queryset = Product.objects.all()
-    serializer_class = ProductSerializer
-
-
-class TaggedProductViewSet(viewsets.ModelViewSet):
-    """ViewSet for Product with ManyToMany tags."""
-
-    queryset = Product.objects.all()
-    serializer_class = ProductWithTagsSerializer
-
-
 @override_settings(ROOT_URLCONF="tests.urls")
 class RelationshipFieldIntegrationTests(TestCase):
     """Integration tests for relationship fields via MCP."""
@@ -2031,26 +1978,99 @@ class RelationshipFieldIntegrationTests(TestCase):
         super().setUp()
         registry.clear()
 
-        # Register viewsets with unique basenames
-        registry.register_viewset(OrderViewSet, base_name="orders")
-        registry.register_viewset(SlugProductViewSet, base_name="slugproducts")
-        registry.register_viewset(TaggedProductViewSet, base_name="taggedproducts")
+        # Define serializers dynamically in setUp to comply with README standards
+        class OrderSerializer(serializers.ModelSerializer):
+            """Serializer for Order model with PrimaryKeyRelatedField."""
+
+            class Meta:
+                model = Order
+                fields = ["id", "customer", "total", "created_at"]
+                read_only_fields = ["created_at"]
+
+        class ProductSerializer(serializers.ModelSerializer):
+            """Serializer for Product model with SlugRelatedField."""
+
+            category_slug = serializers.SlugRelatedField(
+                queryset=Category.objects.all(),
+                slug_field="slug",
+                source="category",
+                allow_null=True,
+            )
+
+            class Meta:
+                model = Product
+                fields = [
+                    "id",
+                    "name",
+                    "description",
+                    "price",
+                    "in_stock",
+                    "category_slug",
+                    "slug",
+                ]
+
+        class ProductWithTagsSerializer(serializers.ModelSerializer):
+            """Serializer with ManyToMany relationship using PrimaryKeyRelatedField."""
+
+            tags = serializers.PrimaryKeyRelatedField(
+                queryset=Tag.objects.all(), many=True, required=False
+            )
+
+            class Meta:
+                model = Product
+                fields = ["id", "name", "price", "tags"]
+
+        # Store serializers on instance for ViewSets to access
+        self.OrderSerializer = OrderSerializer
+        self.ProductSerializer = ProductSerializer
+        self.ProductWithTagsSerializer = ProductWithTagsSerializer
+
+        # Define ViewSets dynamically in setUp
+        @mcp_viewset(basename="orders")
+        class OrderViewSet(viewsets.ModelViewSet):
+            """ViewSet for Order with ForeignKey relationship."""
+
+            queryset = Order.objects.all()
+
+            def get_serializer_class(self):
+                # Access test instance's serializer through registry context
+                return OrderSerializer
+
+        @mcp_viewset(basename="slugproducts")
+        class SlugProductViewSet(viewsets.ModelViewSet):
+            """ViewSet for Product with SlugRelatedField."""
+
+            queryset = Product.objects.all()
+
+            def get_serializer_class(self):
+                return ProductSerializer
+
+        @mcp_viewset(basename="taggedproducts")
+        class TaggedProductViewSet(viewsets.ModelViewSet):
+            """ViewSet for Product with ManyToMany tags."""
+
+            queryset = Product.objects.all()
+
+            def get_serializer_class(self):
+                return ProductWithTagsSerializer
+
+        self.viewsets = [OrderViewSet, SlugProductViewSet, TaggedProductViewSet]
 
         # Initialize MCP client
         self.client = MCPClient()
 
         # Create test data
-        self.customer1 = Customer.objects.create(
+        self.customer1 = CustomerFactory(
             name="Alice Smith", email="alice@example.com", age=30
         )
-        self.customer2 = Customer.objects.create(
+        self.customer2 = CustomerFactory(
             name="Bob Jones", email="bob@example.com", age=25
         )
 
-        self.category1 = Category.objects.create(name="Electronics", slug="electronics")
-        self.category2 = Category.objects.create(name="Books", slug="books")
+        self.category1 = CategoryFactory(name="Electronics", slug="electronics")
+        self.category2 = CategoryFactory(name="Books", slug="books")
 
-        self.product1 = Product.objects.create(
+        self.product1 = ProductFactory(
             name="Laptop",
             description="High-performance laptop",
             price="999.99",
@@ -2058,9 +2078,9 @@ class RelationshipFieldIntegrationTests(TestCase):
             slug="laptop",
         )
 
-        self.tag1 = Tag.objects.create(name="Featured")
-        self.tag2 = Tag.objects.create(name="Sale")
-        self.tag3 = Tag.objects.create(name="New")
+        self.tag1 = TagFactory(name="Featured")
+        self.tag2 = TagFactory(name="Sale")
+        self.tag3 = TagFactory(name="New")
 
     def test_create_order_with_foreign_key(self):
         """Test creating an order with PrimaryKeyRelatedField."""
@@ -2083,7 +2103,7 @@ class RelationshipFieldIntegrationTests(TestCase):
 
     def test_update_order_customer(self):
         """Test updating an order's customer relationship."""
-        order = Order.objects.create(customer=self.customer1, total="100.00")
+        order = OrderFactory(customer=self.customer1, total="100.00")
 
         self.client.call_tool(
             "update_orders",
@@ -2240,7 +2260,7 @@ class RelationshipFieldIntegrationTests(TestCase):
 
     def test_update_product_tags(self):
         """Test updating ManyToMany tags."""
-        product = Product.objects.create(name="Test Product", price="50.00")
+        product = ProductFactory(name="Test Product", price="50.00")
         product.tags.add(self.tag1)
 
         # Update to different tags
@@ -2264,7 +2284,7 @@ class RelationshipFieldIntegrationTests(TestCase):
 
     def test_empty_many_to_many(self):
         """Test setting empty array for ManyToMany field."""
-        product = Product.objects.create(name="Test Product", price="50.00")
+        product = ProductFactory(name="Test Product", price="50.00")
         product.tags.add(self.tag1, self.tag2)
 
         # Clear all tags
@@ -2317,117 +2337,6 @@ class RelationshipFieldIntegrationTests(TestCase):
         self.assertEqual(tags_field["items"]["type"], "integer")
 
 
-# Define serializers for ChoiceField integration tests
-class StatusChoiceSerializer(serializers.Serializer):
-    """Serializer with ChoiceField for status."""
-
-    STATUS_CHOICES = [
-        ("draft", "Draft"),
-        ("published", "Published"),
-        ("archived", "Archived"),
-    ]
-
-    status = serializers.ChoiceField(choices=STATUS_CHOICES)
-    name = serializers.CharField(max_length=100)
-
-
-class PriorityChoiceSerializer(serializers.Serializer):
-    """Serializer with integer ChoiceField for priority."""
-
-    PRIORITY_CHOICES = [(1, "Low"), (2, "Medium"), (3, "High")]
-
-    priority = serializers.ChoiceField(choices=PRIORITY_CHOICES)
-    description = serializers.CharField(max_length=200)
-
-
-class TagsMultipleChoiceSerializer(serializers.Serializer):
-    """Serializer with MultipleChoiceField for tags."""
-
-    TAG_CHOICES = [
-        ("frontend", "Frontend"),
-        ("backend", "Backend"),
-        ("database", "Database"),
-        ("testing", "Testing"),
-    ]
-
-    tags = serializers.MultipleChoiceField(choices=TAG_CHOICES)
-    title = serializers.CharField(max_length=100)
-
-
-class RequiredTagsSerializer(serializers.Serializer):
-    """Serializer with MultipleChoiceField that doesn't allow empty."""
-
-    TAG_CHOICES = [("bug", "Bug"), ("feature", "Feature"), ("docs", "Documentation")]
-
-    tags = serializers.MultipleChoiceField(choices=TAG_CHOICES, allow_empty=False)
-    summary = serializers.CharField(max_length=100)
-
-
-# Define ViewSets for ChoiceField integration tests
-@mcp_viewset()
-class StatusViewSet(viewsets.GenericViewSet):
-    @mcp_tool(input_serializer=StatusChoiceSerializer)
-    @action(detail=False, methods=["post"])
-    def create_with_status(self, request):
-        serializer = StatusChoiceSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return Response(
-            {
-                "id": 1,
-                "status": serializer.validated_data["status"],
-                "name": serializer.validated_data["name"],
-            }
-        )
-
-
-@mcp_viewset()
-class PriorityViewSet(viewsets.GenericViewSet):
-    @mcp_tool(input_serializer=PriorityChoiceSerializer)
-    @action(detail=False, methods=["post"])
-    def create_with_priority(self, request):
-        serializer = PriorityChoiceSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return Response(
-            {
-                "id": 1,
-                "priority": serializer.validated_data["priority"],
-                "description": serializer.validated_data["description"],
-            }
-        )
-
-
-@mcp_viewset()
-class TagsViewSet(viewsets.GenericViewSet):
-    @mcp_tool(input_serializer=TagsMultipleChoiceSerializer)
-    @action(detail=False, methods=["post"])
-    def create_with_tags(self, request):
-        serializer = TagsMultipleChoiceSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return Response(
-            {
-                "id": 1,
-                "tags": serializer.validated_data["tags"],
-                "title": serializer.validated_data["title"],
-            }
-        )
-
-
-@mcp_viewset()
-class RequiredTagsViewSet(viewsets.GenericViewSet):
-    @mcp_tool(input_serializer=RequiredTagsSerializer)
-    @action(detail=False, methods=["post"])
-    def create_with_required_tags(self, request):
-        serializer = RequiredTagsSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        return Response(
-            {
-                "id": 1,
-                "tags": serializer.validated_data["tags"],
-                "summary": serializer.validated_data["summary"],
-            }
-        )
-
-
 class ChoiceFieldIntegrationTests(TestCase):
     """Integration tests for ChoiceField and MultipleChoiceField in MCP ViewSets."""
 
@@ -2436,11 +2345,131 @@ class ChoiceFieldIntegrationTests(TestCase):
         super().setUp()
         registry.clear()
 
-        # Register the choice field ViewSets
-        registry.register_viewset(StatusViewSet)
-        registry.register_viewset(PriorityViewSet)
-        registry.register_viewset(TagsViewSet)
-        registry.register_viewset(RequiredTagsViewSet)
+        class StatusChoiceSerializer(serializers.Serializer):
+            """Serializer with ChoiceField for status."""
+
+            STATUS_CHOICES = [
+                ("draft", "Draft"),
+                ("published", "Published"),
+                ("archived", "Archived"),
+            ]
+
+            status = serializers.ChoiceField(choices=STATUS_CHOICES)
+            name = serializers.CharField(max_length=100)
+
+        class PriorityChoiceSerializer(serializers.Serializer):
+            """Serializer with integer ChoiceField for priority."""
+
+            PRIORITY_CHOICES = [(1, "Low"), (2, "Medium"), (3, "High")]
+
+            priority = serializers.ChoiceField(choices=PRIORITY_CHOICES)
+            description = serializers.CharField(max_length=200)
+
+        class TagsMultipleChoiceSerializer(serializers.Serializer):
+            """Serializer with MultipleChoiceField for tags."""
+
+            TAG_CHOICES = [
+                ("frontend", "Frontend"),
+                ("backend", "Backend"),
+                ("database", "Database"),
+                ("testing", "Testing"),
+            ]
+
+            tags = serializers.MultipleChoiceField(choices=TAG_CHOICES)
+            title = serializers.CharField(max_length=100)
+
+        class RequiredTagsSerializer(serializers.Serializer):
+            """Serializer with MultipleChoiceField that doesn't allow empty."""
+
+            TAG_CHOICES = [
+                ("bug", "Bug"),
+                ("feature", "Feature"),
+                ("docs", "Documentation"),
+            ]
+
+            tags = serializers.MultipleChoiceField(
+                choices=TAG_CHOICES, allow_empty=False
+            )
+            summary = serializers.CharField(max_length=100)
+
+        @mcp_viewset()
+        class StatusViewSet(viewsets.GenericViewSet):
+            def get_serializer_class(self):
+                return StatusChoiceSerializer
+
+            @mcp_tool(input_serializer=StatusChoiceSerializer)
+            @action(detail=False, methods=["post"])
+            def create_with_status(self, request):
+                serializer = StatusChoiceSerializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                return Response(
+                    {
+                        "id": 1,
+                        "status": serializer.validated_data["status"],
+                        "name": serializer.validated_data["name"],
+                    }
+                )
+
+        @mcp_viewset()
+        class PriorityViewSet(viewsets.GenericViewSet):
+            def get_serializer_class(self):
+                return PriorityChoiceSerializer
+
+            @mcp_tool(input_serializer=PriorityChoiceSerializer)
+            @action(detail=False, methods=["post"])
+            def create_with_priority(self, request):
+                serializer = PriorityChoiceSerializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                return Response(
+                    {
+                        "id": 1,
+                        "priority": serializer.validated_data["priority"],
+                        "description": serializer.validated_data["description"],
+                    }
+                )
+
+        @mcp_viewset()
+        class TagsViewSet(viewsets.GenericViewSet):
+            def get_serializer_class(self):
+                return TagsMultipleChoiceSerializer
+
+            @mcp_tool(input_serializer=TagsMultipleChoiceSerializer)
+            @action(detail=False, methods=["post"])
+            def create_with_tags(self, request):
+                serializer = TagsMultipleChoiceSerializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                return Response(
+                    {
+                        "id": 1,
+                        "tags": serializer.validated_data["tags"],
+                        "title": serializer.validated_data["title"],
+                    }
+                )
+
+        @mcp_viewset()
+        class RequiredTagsViewSet(viewsets.GenericViewSet):
+            def get_serializer_class(self):
+                return RequiredTagsSerializer
+
+            @mcp_tool(input_serializer=RequiredTagsSerializer)
+            @action(detail=False, methods=["post"])
+            def create_with_required_tags(self, request):
+                serializer = RequiredTagsSerializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                return Response(
+                    {
+                        "id": 1,
+                        "tags": serializer.validated_data["tags"],
+                        "summary": serializer.validated_data["summary"],
+                    }
+                )
+
+        self.viewsets = [
+            StatusViewSet,
+            PriorityViewSet,
+            TagsViewSet,
+            RequiredTagsViewSet,
+        ]
 
         # Initialize MCP client
         self.client = MCPClient()

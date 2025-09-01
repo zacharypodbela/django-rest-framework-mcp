@@ -44,12 +44,14 @@ setup(
             "mypy>=1.0.0",
             "django-stubs>=4.0.0",
             "djangorestframework-stubs>=3.14.0",
+            "factory-boy>=3.3.0",
         ],
         "test": [
             "pytest>=7.0.0",
             "pytest-django>=4.5.0",
             "pytest-cov>=4.0.0",
             "coverage>=6.0",
+            "factory-boy>=3.3.0",
         ],
     },
 )
