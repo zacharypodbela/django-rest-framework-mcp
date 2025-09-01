@@ -96,10 +96,9 @@ def get_ip_address_field_schema(field: serializers.IPAddressField) -> Dict[str, 
 
     # IPAddressField uses function validators, not regex validators
     # We can provide format description but no regex pattern
-    protocol = getattr(field, "protocol", "both")
-    if protocol == "IPv4":
+    if field.protocol == "IPv4":
         schema["description"] = "Valid IPv4 address (e.g., 192.168.1.1)"
-    elif protocol == "IPv6":
+    elif field.protocol == "IPv6":
         schema["description"] = "Valid IPv6 address (e.g., 2001:db8::1)"
     else:
         schema["description"] = "Valid IPv4 or IPv6 address"
