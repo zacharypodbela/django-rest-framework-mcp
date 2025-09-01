@@ -1964,6 +1964,76 @@ class TestJSONFieldSchemas(unittest.TestCase):
             self.assertEqual(schema["default"], default_value)
 
 
+class TestDurationFieldSchemas(unittest.TestCase):
+    """Test schema generation for DurationField."""
+
+    def test_basic_duration_field(self):
+        """Test basic DurationField generates string schema."""
+        field = serializers.DurationField()
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertIn("format", schema)
+        self.assertEqual(schema["format"], "duration")
+        self.assertIn("description", schema)
+        self.assertIn("ISO 8601", schema["description"])
+
+    def test_duration_field_with_min_max(self):
+        """Test DurationField with min_value and max_value constraints."""
+        from datetime import timedelta
+
+        min_val = timedelta(hours=1)
+        max_val = timedelta(days=7)
+        field = serializers.DurationField(min_value=min_val, max_value=max_val)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["format"], "duration")
+        # Min/max values should be converted to ISO 8601 format
+        self.assertIn("minimum", schema)
+        self.assertIn("maximum", schema)
+        self.assertEqual(
+            schema["minimum"], "P0DT01H00M00S"
+        )  # 1 hour in Django's ISO format
+        self.assertEqual(
+            schema["maximum"], "P7DT00H00M00S"
+        )  # 7 days in Django's ISO format
+
+    def test_duration_field_with_help_text(self):
+        """Test DurationField with custom help text."""
+        field = serializers.DurationField(help_text="Enter a duration")
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["format"], "duration")
+        # Help text is combined with format description
+        self.assertIn("Enter a duration", schema["description"])
+        self.assertIn("ISO 8601", schema["description"])
+
+    def test_duration_field_required(self):
+        """Test required DurationField."""
+        field = serializers.DurationField(required=True)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["format"], "duration")
+        # Required is handled at serializer level, not field level
+
+    def test_duration_field_with_default(self):
+        """Test DurationField with default value."""
+        from datetime import timedelta
+
+        default_duration = timedelta(hours=2, minutes=30)
+        field = serializers.DurationField(default=default_duration)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["format"], "duration")
+        # Default should be converted to ISO 8601 format by Django's utility
+        self.assertIn("default", schema)
+        self.assertEqual(schema["default"], "P0DT02H30M00S")  # Django's format
+
+
 class TestChoiceFieldSchemas(unittest.TestCase):
     """Test schema generation for ChoiceField and MultipleChoiceField."""
 

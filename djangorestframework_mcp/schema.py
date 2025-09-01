@@ -159,6 +159,38 @@ def get_json_field_schema(field: serializers.JSONField) -> Dict[str, Any]:
     return {}
 
 
+def get_duration_field_schema(field: serializers.DurationField) -> Dict[str, Any]:
+    """Generate schema for DurationField.
+
+    DurationField stores timedelta values. For MCP compatibility, we use
+    ISO 8601 duration format as it's the most standardized format.
+    """
+    from datetime import timedelta
+
+    from django.utils.duration import duration_iso_string
+
+    schema: Dict[str, Any] = {
+        "type": "string",
+        "format": "duration",
+        "description": "ISO 8601 duration format (e.g., 'P1DT2H3M4S' for 1 day, 2 hours, 3 minutes, 4 seconds)",
+    }
+
+    # Add min/max constraints if present
+    if hasattr(field, "min_value") and field.min_value is not None:
+        schema["minimum"] = duration_iso_string(field.min_value)
+
+    if hasattr(field, "max_value") and field.max_value is not None:
+        schema["maximum"] = duration_iso_string(field.max_value)
+
+    # Handle default value - convert timedelta to ISO 8601
+    if hasattr(field, "default") and field.default is not serializers.empty:
+        default = field.default() if callable(field.default) else field.default
+        if isinstance(default, timedelta):
+            schema["default"] = duration_iso_string(default)
+
+    return schema
+
+
 def get_choice_field_schema(field: serializers.ChoiceField) -> Dict[str, Any]:
     """Generate schema for ChoiceField."""
     # Get the flat choices dict (handles grouped choices)
@@ -362,6 +394,7 @@ FIELD_TYPE_REGISTRY = {
     serializers.DateTimeField: get_datetime_schema,
     serializers.DateField: get_date_schema,
     serializers.TimeField: get_time_schema,
+    serializers.DurationField: get_duration_field_schema,
     serializers.ListField: get_list_field_schema,
     serializers.DictField: get_dict_field_schema,
     serializers.JSONField: get_json_field_schema,
@@ -425,10 +458,18 @@ def field_to_json_schema(field: Field) -> Dict[str, Any]:
     # Get complete schema from registry (includes all field-specific logic)
     schema = get_base_schema_for_field(field)
 
-    # Apply numeric constraints (minimum/maximum)
-    if hasattr(field, "max_value") and field.max_value is not None:
+    # Apply numeric constraints (minimum/maximum) if not already handled by field-specific schema generator
+    if (
+        "maximum" not in schema
+        and hasattr(field, "max_value")
+        and field.max_value is not None
+    ):
         schema["maximum"] = field.max_value
-    if hasattr(field, "min_value") and field.min_value is not None:
+    if (
+        "minimum" not in schema
+        and hasattr(field, "min_value")
+        and field.min_value is not None
+    ):
         schema["minimum"] = field.min_value
 
     # Apply string constraints (minLength/maxLength)
@@ -451,8 +492,12 @@ def field_to_json_schema(field: Field) -> Dict[str, Any]:
                 schema["pattern"] = validator.regex.pattern
                 break
 
-    # Apply default value if present
-    if hasattr(field, "default") and field.default is not serializers.empty:
+    # Apply default value if present and not already handled by field-specific schema generator
+    if (
+        "default" not in schema
+        and hasattr(field, "default")
+        and field.default is not serializers.empty
+    ):
         # Convert callable defaults to their values
         default = field.default() if callable(field.default) else field.default
         # Only include JSON-serializable defaults

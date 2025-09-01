@@ -2517,7 +2517,6 @@ class ChoiceFieldIntegrationTests(TestCase):
         self.assertEqual(set(tags_field["items"]["enum"]), {"bug", "feature", "docs"})
 
 
-
 class TestRegexFieldsIntegration(MCPTestCase):
     """Integration tests for RegexField, SlugField, and IPAddressField."""
 
@@ -2717,3 +2716,86 @@ class TestCompositeFieldsIntegration(MCPTestCase):
         # or no type constraint beyond what field_to_json_schema adds
         self.assertNotIn("items", config_field)  # Not an array schema
         self.assertNotIn("additionalProperties", config_field)  # Not a dict schema
+
+
+@override_settings(ROOT_URLCONF="tests.urls")
+class TestDurationFieldIntegration(MCPTestCase):
+    """Integration tests for DurationField."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        super().setUp()
+        from datetime import timedelta
+
+        # Create serializer with DurationField
+        class TimerSerializer(serializers.Serializer):
+            """Serializer with DurationField for time tracking."""
+
+            duration = serializers.DurationField(
+                help_text="Time duration in ISO 8601 format"
+            )
+            min_duration = serializers.DurationField(
+                min_value=timedelta(minutes=5),
+                max_value=timedelta(hours=2),
+                help_text="Duration between 5 minutes and 2 hours",
+            )
+            optional_duration = serializers.DurationField(
+                required=False, default=timedelta(hours=1)
+            )
+
+        # Register ViewSet with the serializer
+        @mcp_viewset(basename="timer")
+        class TimerViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin):
+            serializer_class = TimerSerializer
+
+        # Store for cleanup
+        self.viewset = TimerViewSet
+
+        # Create test client
+        self.client = MCPClient()
+
+        # Import timedelta for tests
+        from datetime import timedelta
+
+        self.timedelta = timedelta
+
+    def tearDown(self):
+        """Clean up registered viewsets."""
+        registry.clear()
+        super().tearDown()
+
+    def test_duration_field_schema(self):
+        """Test that DurationField generates correct schema."""
+        result = self.client.list_tools()
+        tools = result["tools"]
+
+        # Find the timer tool
+        timer_tool = next(t for t in tools if t["name"] == "create_timer")
+        body_schema = timer_tool["inputSchema"]["properties"]["body"]
+
+        # Check basic duration field
+        self.assertIn("duration", body_schema["properties"])
+        duration_field = body_schema["properties"]["duration"]
+        self.assertEqual(duration_field["type"], "string")
+        self.assertEqual(duration_field["format"], "duration")
+        self.assertIn("ISO 8601", duration_field["description"])
+
+        # Check constrained duration field
+        self.assertIn("min_duration", body_schema["properties"])
+        min_duration_field = body_schema["properties"]["min_duration"]
+        self.assertEqual(min_duration_field["type"], "string")
+        self.assertEqual(min_duration_field["format"], "duration")
+        self.assertIn("minimum", min_duration_field)
+        self.assertIn("maximum", min_duration_field)
+
+        # Check optional duration field
+        self.assertIn("optional_duration", body_schema["properties"])
+        optional_field = body_schema["properties"]["optional_duration"]
+        self.assertEqual(optional_field["type"], "string")
+        self.assertEqual(optional_field["format"], "duration")
+
+        # Check required fields
+        required = body_schema.get("required", [])
+        self.assertIn("duration", required)
+        self.assertIn("min_duration", required)
+        self.assertNotIn("optional_duration", required)
