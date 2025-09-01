@@ -4,7 +4,6 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from django.contrib.auth.models import User
 from django.http import JsonResponse
 from django.test import RequestFactory, TestCase
 from rest_framework.authentication import (
@@ -12,11 +11,11 @@ from rest_framework.authentication import (
     SessionAuthentication,
     TokenAuthentication,
 )
-from rest_framework.authtoken.models import Token
 
 from djangorestframework_mcp.registry import registry
 from djangorestframework_mcp.types import MCPTool
 from djangorestframework_mcp.views import MCPView
+from tests.factories import TokenFactory, UserFactory
 from tests.views import AuthenticatedViewSet, MultipleAuthViewSet
 
 
@@ -380,8 +379,10 @@ class MCPViewAuthenticationTests(TestCase):
     def setUp(self):
         """Set up test data."""
         self.factory = RequestFactory()
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
 
     def test_mcpview_authentication_required(self):
         """Verifies custom MCPView auth requirements are enforced."""
@@ -499,8 +500,8 @@ class MCPViewAuthenticationPassthroughTests(TestCase):
 
     def setUp(self):
         self.factory = RequestFactory()
-        self.user = User.objects.create_user(username="testuser", password="testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(username="testuser", password="testpass")
+        self.token = TokenFactory(user=self.user)
 
     def test_mcp_authenticated_user_available_in_viewset(self):
         """Test that user authenticated at MCP level is available in ViewSet execution"""
@@ -638,8 +639,8 @@ class MCPViewMultipleAuthenticationTests(TestCase):
 
     def setUp(self):
         self.factory = RequestFactory()
-        self.user = User.objects.create_user(username="testuser", password="testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(username="testuser", password="testpass")
+        self.token = TokenFactory(user=self.user)
 
     def test_first_authenticator_succeeds(self):
         """Test that when first authenticator succeeds, it's used and others aren't tried"""
@@ -892,8 +893,10 @@ class ErrorResponseTests(TestCase):
     def setUp(self):
         registry.clear()
         registry.register_viewset(AuthenticatedViewSet)
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
 
     def tearDown(self):
         registry.clear()
@@ -1007,8 +1010,10 @@ class Return200ForErrorsTests(TestCase):
 
     def setUp(self):
         self.factory = RequestFactory()
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
 
     def test_auth_error_default_behavior(self):
         """Test that with setting disabled (default), auth failures return proper HTTP 401 status codes."""

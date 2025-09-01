@@ -3,13 +3,11 @@
 import base64
 import json
 
-from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.authentication import (
     TokenAuthentication,
 )
-from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -18,6 +16,15 @@ from djangorestframework_mcp.decorators import mcp_tool, mcp_viewset
 from djangorestframework_mcp.registry import registry
 from djangorestframework_mcp.test import MCPClient
 
+from .factories import (
+    CategoryFactory,
+    CustomerFactory,
+    OrderFactory,
+    ProductFactory,
+    TagFactory,
+    TokenFactory,
+    UserFactory,
+)
 from .models import Category, Customer, Order, Product, Tag
 from .views import (
     AuthenticatedViewSet,
@@ -89,10 +96,10 @@ class MCPToolExecutionTests(MCPTestCase):
         # Initialize MCP client for all tests
         self.client = MCPClient()
         # Create test data
-        self.customer1 = Customer.objects.create(
+        self.customer1 = CustomerFactory(
             name="Alice Smith", email="alice@example.com", age=30, is_active=True
         )
-        self.customer2 = Customer.objects.create(
+        self.customer2 = CustomerFactory(
             name="Bob Jones", email="bob@example.com", age=25, is_active=False
         )
 
@@ -314,7 +321,7 @@ class MCPLegacyContentTests(MCPTestCase):
         # Initialize MCP client for all tests
         self.client = MCPClient()
         # Create test data
-        self.customer = Customer.objects.create(
+        self.customer = CustomerFactory(
             name="Test Customer", email="test@example.com", age=25, is_active=True
         )
 
@@ -574,7 +581,7 @@ class MCPProtocolTests(MCPTestCase):
         client = Client()
 
         # Create test customer first
-        Customer.objects.create(name="Test Customer", email="test@example.com", age=30)
+        CustomerFactory(name="Test Customer", email="test@example.com", age=30)
 
         request_data = {
             "jsonrpc": "2.0",
@@ -641,9 +648,7 @@ class MCPProtocolTests(MCPTestCase):
         client = Client()
 
         # Create customer with email
-        Customer.objects.create(
-            name="Existing Customer", email="existing@example.com", age=25
-        )
+        CustomerFactory(name="Existing Customer", email="existing@example.com", age=25)
 
         request_data = {
             "jsonrpc": "2.0",
@@ -689,10 +694,10 @@ class TestMCPRequestConditionalLogic(MCPTestCase):
         registry.clear()
 
         # Create test data
-        self.active_customer = Customer.objects.create(
+        self.active_customer = CustomerFactory(
             name="Active Customer", email="active@example.com", age=30, is_active=True
         )
-        self.inactive_customer = Customer.objects.create(
+        self.inactive_customer = CustomerFactory(
             name="Inactive Customer",
             email="inactive@example.com",
             age=25,
@@ -1152,8 +1157,10 @@ class AuthenticationIntegrationTests(MCPTestCase):
     def setUp(self):
         """Set up test data."""
         super().setUp()
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
         self.client = MCPClient()
 
     def test_tools_list_requires_authentication(self):
@@ -1202,7 +1209,7 @@ class AuthenticationIntegrationTests(MCPTestCase):
         from django.test import Client
 
         # Create test customer
-        Customer.objects.create(
+        CustomerFactory(
             name="API Test Customer",
             email="apitest@example.com",
             age=30,
@@ -1245,8 +1252,10 @@ class ViewSetAuthenticationTests(TestCase):
         registry.register_viewset(CustomPermissionViewSet)
 
         # Create test user and token
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
 
         self.client = MCPClient()
 
@@ -1458,14 +1467,16 @@ class MixedAuthenticationTests(TestCase):
         registry.clear()
 
         # Create test user and token
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
 
         # Create a second user for permission testing
-        self.other_user = User.objects.create_user(
-            "otheruser", "other@example.com", "otherpass"
+        self.other_user = UserFactory(
+            username="otheruser", email="other@example.com", password="otherpass"
         )
-        self.other_token = Token.objects.create(user=self.other_user)
+        self.other_token = TokenFactory(user=self.other_user)
 
     def tearDown(self):
         """Clean up after each test."""
@@ -1654,8 +1665,10 @@ class Return200ForErrorsIntegrationTests(TestCase):
         registry.register_viewset(CustomPermissionViewSet)
 
         # Create test user and token
-        self.user = User.objects.create_user("testuser", "test@example.com", "testpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        self.token = TokenFactory(user=self.user)
 
     def tearDown(self):
         """Clean up after each test."""
@@ -1883,10 +1896,11 @@ class Return200ForErrorsIntegrationTests(TestCase):
                 # Simulate retrieving an object owned by a different user
                 from types import SimpleNamespace
 
-                from django.contrib.auth.models import User
 
-                other_user = User.objects.create_user(
-                    "otheruser", "other@example.com", "otherpass"
+                other_user = UserFactory(
+                    username="otheruser",
+                    email="other@example.com",
+                    password="otherpass",
                 )
                 obj = SimpleNamespace(user=other_user, id=pk)
                 self.check_object_permissions(request, obj)
@@ -2040,17 +2054,17 @@ class RelationshipFieldIntegrationTests(TestCase):
         self.client = MCPClient()
 
         # Create test data
-        self.customer1 = Customer.objects.create(
+        self.customer1 = CustomerFactory(
             name="Alice Smith", email="alice@example.com", age=30
         )
-        self.customer2 = Customer.objects.create(
+        self.customer2 = CustomerFactory(
             name="Bob Jones", email="bob@example.com", age=25
         )
 
-        self.category1 = Category.objects.create(name="Electronics", slug="electronics")
-        self.category2 = Category.objects.create(name="Books", slug="books")
+        self.category1 = CategoryFactory(name="Electronics", slug="electronics")
+        self.category2 = CategoryFactory(name="Books", slug="books")
 
-        self.product1 = Product.objects.create(
+        self.product1 = ProductFactory(
             name="Laptop",
             description="High-performance laptop",
             price="999.99",
@@ -2058,9 +2072,9 @@ class RelationshipFieldIntegrationTests(TestCase):
             slug="laptop",
         )
 
-        self.tag1 = Tag.objects.create(name="Featured")
-        self.tag2 = Tag.objects.create(name="Sale")
-        self.tag3 = Tag.objects.create(name="New")
+        self.tag1 = TagFactory(name="Featured")
+        self.tag2 = TagFactory(name="Sale")
+        self.tag3 = TagFactory(name="New")
 
     def test_create_order_with_foreign_key(self):
         """Test creating an order with PrimaryKeyRelatedField."""
@@ -2083,7 +2097,7 @@ class RelationshipFieldIntegrationTests(TestCase):
 
     def test_update_order_customer(self):
         """Test updating an order's customer relationship."""
-        order = Order.objects.create(customer=self.customer1, total="100.00")
+        order = OrderFactory(customer=self.customer1, total="100.00")
 
         self.client.call_tool(
             "update_orders",
@@ -2240,7 +2254,7 @@ class RelationshipFieldIntegrationTests(TestCase):
 
     def test_update_product_tags(self):
         """Test updating ManyToMany tags."""
-        product = Product.objects.create(name="Test Product", price="50.00")
+        product = ProductFactory(name="Test Product", price="50.00")
         product.tags.add(self.tag1)
 
         # Update to different tags
@@ -2264,7 +2278,7 @@ class RelationshipFieldIntegrationTests(TestCase):
 
     def test_empty_many_to_many(self):
         """Test setting empty array for ManyToMany field."""
-        product = Product.objects.create(name="Test Product", price="50.00")
+        product = ProductFactory(name="Test Product", price="50.00")
         product.tags.add(self.tag1, self.tag2)
 
         # Clear all tags

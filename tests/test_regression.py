@@ -4,11 +4,10 @@ import base64
 import json
 from decimal import Decimal
 
-from django.contrib.auth.models import User
 from django.test import Client, TestCase, override_settings
 from rest_framework import status
-from rest_framework.authtoken.models import Token
 
+from .factories import CustomerFactory, ProductFactory, TokenFactory, UserFactory
 from .models import Customer, Product
 
 
@@ -20,21 +19,21 @@ class DRFRegressionTests(TestCase):
         self.client = Client()
 
         # Create test customers
-        self.customer1 = Customer.objects.create(
+        self.customer1 = CustomerFactory(
             name="Alice Johnson", email="alice@example.com", age=30, is_active=True
         )
-        self.customer2 = Customer.objects.create(
+        self.customer2 = CustomerFactory(
             name="Bob Smith", email="bob@example.com", age=25, is_active=False
         )
 
         # Create test products
-        self.product1 = Product.objects.create(
+        self.product1 = ProductFactory(
             name="Laptop",
             description="High-performance laptop",
             price=Decimal("999.99"),
             in_stock=True,
         )
-        self.product2 = Product.objects.create(
+        self.product2 = ProductFactory(
             name="Mouse",
             description="Wireless optical mouse",
             price=Decimal("29.99"),
@@ -383,14 +382,19 @@ class AuthenticationRegressionTests(TestCase):
 
     def setUp(self):
         """Set up test data."""
-        self.user = User.objects.create_user("apiuser", "api@example.com", "apipass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="apiuser", email="api@example.com", password="apipass"
+        )
+        self.token = TokenFactory(user=self.user)
 
         # Create a staff user for permission tests
-        self.staff_user = User.objects.create_user(
-            "staffuser", "staff@example.com", "staffpass", is_staff=True
+        self.staff_user = UserFactory(
+            username="staffuser",
+            email="staff@example.com",
+            password="staffpass",
+            is_staff=True,
         )
-        self.staff_token = Token.objects.create(user=self.staff_user)
+        self.staff_token = TokenFactory(user=self.staff_user)
 
     def test_authenticated_viewset_normal_api_with_valid_token(self):
         """Test that authenticated ViewSets work normally via DRF API with valid token."""
@@ -489,10 +493,12 @@ class BypassAuthenticationRegressionTests(TestCase):
     """Test that bypassing MCP auth doesn't affect normal API authentication."""
 
     def setUp(self):
-        self.user = User.objects.create_user(
-            "regressionuser", "regression@example.com", "regressionpass"
+        self.user = UserFactory(
+            username="regressionuser",
+            email="regression@example.com",
+            password="regressionpass",
         )
-        self.token = Token.objects.create(user=self.user)
+        self.token = TokenFactory(user=self.user)
 
     def test_bypass_auth_setting_doesnt_affect_normal_api(self):
         """Test that BYPASS_VIEWSET_AUTHENTICATION setting only affects MCP, not normal API."""
@@ -538,8 +544,10 @@ class BypassPermissionsRegressionTests(TestCase):
     """Test that bypassing MCP permissions doesn't affect normal API permissions."""
 
     def setUp(self):
-        self.user = User.objects.create_user("permuser", "perm@example.com", "permpass")
-        self.token = Token.objects.create(user=self.user)
+        self.user = UserFactory(
+            username="permuser", email="perm@example.com", password="permpass"
+        )
+        self.token = TokenFactory(user=self.user)
 
     def test_bypass_permissions_setting_doesnt_affect_normal_api(self):
         """Test that BYPASS_VIEWSET_PERMISSIONS setting only affects MCP, not normal API."""
@@ -579,10 +587,12 @@ class AuthenticationMiddlewareCompatibilityTests(TestCase):
         registry.register_viewset(AuthenticatedViewSet)
         registry.register_viewset(MultipleAuthViewSet)
 
-        self.user = User.objects.create_user(
-            "middleware", "middleware@example.com", "middlewarepass"
+        self.user = UserFactory(
+            username="middleware",
+            email="middleware@example.com",
+            password="middlewarepass",
         )
-        self.token = Token.objects.create(user=self.user)
+        self.token = TokenFactory(user=self.user)
 
     def test_session_middleware_compatibility(self):
         """Test that MCP auth works alongside session middleware."""
