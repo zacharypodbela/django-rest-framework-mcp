@@ -472,7 +472,7 @@ class CustomerMCPTests(TestCase):
   - ✅ Required/optional inferred automatically
   - ✅ Constraints (min/max length, min/max value, regex pattern, allow_null, allow_blank) and formatting (ex: url, email, etc.) inferred automatically
   - ✅ help_text/label passed back to MCP Client as parameter title and description
-  - ✅ Primitive types (string/int/float/bool/datetime/date/time/UUID)
+  - ✅ Primitive types (string/int/float/bool/datetime/date/time/timedelta/UUID)
   - ✅ Composite fields (List/Dict/JSON)
   - ✅ Enum fields (Choice/ManyChoice)
   - ✅ Related fields (PKRelated/SlugRelated/HyperlinkedRelated/ManyRelated)
