@@ -107,6 +107,58 @@ def get_ip_address_field_schema(field: serializers.IPAddressField) -> Dict[str, 
     return schema
 
 
+def get_list_field_schema(field: serializers.ListField) -> Dict[str, Any]:
+    """Generate schema for ListField."""
+    # Get the child field and generate its schema
+    child_field = getattr(field, "child", None)
+    if child_field is None:
+        raise ValueError("ListField must have a child field defined")
+
+    child_schema = field_to_json_schema(child_field)
+    schema: Dict[str, Any] = {"type": "array", "items": child_schema}
+
+    # Add min/max length constraints
+    if hasattr(field, "min_length") and field.min_length is not None:
+        schema["minItems"] = field.min_length
+    if hasattr(field, "max_length") and field.max_length is not None:
+        schema["maxItems"] = field.max_length
+
+    # Handle allow_empty=False
+    if hasattr(field, "allow_empty") and not field.allow_empty:
+        # Only set if no explicit minItems is set or if minItems < 1
+        if "minItems" not in schema or schema["minItems"] < 1:
+            schema["minItems"] = 1
+
+    return schema
+
+
+def get_dict_field_schema(field: serializers.DictField) -> Dict[str, Any]:
+    """Generate schema for DictField."""
+    # Get the child field and generate its schema
+    child_field = getattr(field, "child", None)
+    if child_field is None:
+        raise ValueError("DictField must have a child field defined")
+
+    child_schema = field_to_json_schema(child_field)
+    schema: Dict[str, Any] = {"type": "object", "additionalProperties": child_schema}
+
+    # Handle allow_empty=False
+    if hasattr(field, "allow_empty") and not field.allow_empty:
+        schema["minProperties"] = 1
+
+    return schema
+
+
+def get_json_field_schema(field: serializers.JSONField) -> Dict[str, Any]:
+    """Generate schema for JSONField.
+
+    JSONField accepts any valid JSON value, so we return an empty schema
+    which is the most permissive in JSON Schema.
+    """
+    # Empty schema {} means any valid JSON is accepted
+    return {}
+
+
 def get_choice_field_schema(field: serializers.ChoiceField) -> Dict[str, Any]:
     """Generate schema for ChoiceField."""
     # Get the flat choices dict (handles grouped choices)
@@ -310,6 +362,9 @@ FIELD_TYPE_REGISTRY = {
     serializers.DateTimeField: get_datetime_schema,
     serializers.DateField: get_date_schema,
     serializers.TimeField: get_time_schema,
+    serializers.ListField: get_list_field_schema,
+    serializers.DictField: get_dict_field_schema,
+    serializers.JSONField: get_json_field_schema,
     serializers.MultipleChoiceField: get_multiple_choice_field_schema,
     serializers.ChoiceField: get_choice_field_schema,
     serializers.PrimaryKeyRelatedField: get_primary_key_related_field_schema,

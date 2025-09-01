@@ -5,7 +5,7 @@ import json
 
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
-from rest_framework import serializers, viewsets
+from rest_framework import mixins, serializers, viewsets
 from rest_framework.authentication import (
     TokenAuthentication,
 )
@@ -2523,3 +2523,106 @@ class ChoiceFieldIntegrationTests(TestCase):
 
 # NOTE: RegexField integration tests were removed due to ViewSet registration issues
 # The unit tests in test_schema.py provide comprehensive coverage of RegexField functionality
+
+
+class TestCompositeFieldsIntegration(MCPTestCase):
+    """Integration tests for ListField, DictField, and JSONField."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        super().setUp()
+
+        # Create serializers with composite fields
+        class TagListSerializer(serializers.Serializer):
+            """Serializer with ListField for tags."""
+
+            tags = serializers.ListField(
+                child=serializers.CharField(max_length=50), min_length=1, max_length=10
+            )
+
+        class MetadataSerializer(serializers.Serializer):
+            """Serializer with DictField for metadata."""
+
+            metadata = serializers.DictField(
+                child=serializers.CharField(), allow_empty=False
+            )
+
+        class ConfigSerializer(serializers.Serializer):
+            """Serializer with JSONField for configuration."""
+
+            config = serializers.JSONField()
+
+        # Register ViewSets with the serializers
+        @mcp_viewset(basename="tags")
+        class TagListViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin):
+            serializer_class = TagListSerializer
+
+        @mcp_viewset(basename="metadata")
+        class MetadataViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin):
+            serializer_class = MetadataSerializer
+
+        @mcp_viewset(basename="config")
+        class ConfigViewSet(viewsets.GenericViewSet, mixins.CreateModelMixin):
+            serializer_class = ConfigSerializer
+
+        # Store viewsets for cleanup
+        self.viewsets = [TagListViewSet, MetadataViewSet, ConfigViewSet]
+
+        # Create test client
+        self.client = MCPClient()
+
+    def tearDown(self):
+        """Clean up registered viewsets."""
+        registry.clear()
+        super().tearDown()
+
+    def test_list_field_schema(self):
+        """Test that ListField generates array schema with items."""
+        result = self.client.list_tools()
+        tools = result["tools"]
+
+        # Find the tags tool
+        tags_tool = next(t for t in tools if t["name"] == "create_tags")
+        body_schema = tags_tool["inputSchema"]["properties"]["body"]
+
+        # Check tags field is array with string items
+        self.assertIn("tags", body_schema["properties"])
+        tags_field = body_schema["properties"]["tags"]
+        self.assertEqual(tags_field["type"], "array")
+        self.assertEqual(tags_field["items"]["type"], "string")
+        self.assertEqual(tags_field["items"]["maxLength"], 50)
+        self.assertEqual(tags_field["minItems"], 1)
+        self.assertEqual(tags_field["maxItems"], 10)
+
+    def test_dict_field_schema(self):
+        """Test that DictField generates object schema with additionalProperties."""
+        result = self.client.list_tools()
+        tools = result["tools"]
+
+        # Find the metadata tool
+        metadata_tool = next(t for t in tools if t["name"] == "create_metadata")
+        body_schema = metadata_tool["inputSchema"]["properties"]["body"]
+
+        # Check metadata field is object with string additionalProperties
+        self.assertIn("metadata", body_schema["properties"])
+        metadata_field = body_schema["properties"]["metadata"]
+        self.assertEqual(metadata_field["type"], "object")
+        self.assertEqual(metadata_field["additionalProperties"]["type"], "string")
+        self.assertEqual(metadata_field["minProperties"], 1)
+
+    def test_json_field_schema(self):
+        """Test that JSONField generates permissive schema."""
+        result = self.client.list_tools()
+        tools = result["tools"]
+
+        # Find the config tool
+        config_tool = next(t for t in tools if t["name"] == "create_config")
+        body_schema = config_tool["inputSchema"]["properties"]["body"]
+
+        # Check config field allows any JSON
+        self.assertIn("config", body_schema["properties"])
+        config_field = body_schema["properties"]["config"]
+        # JSONField should have empty schema (most permissive)
+        # or no type constraint beyond what field_to_json_schema adds
+        self.assertNotIn("items", config_field)  # Not an array schema
+        self.assertNotIn("additionalProperties", config_field)  # Not a dict schema

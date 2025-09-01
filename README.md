@@ -470,13 +470,14 @@ class CustomerMCPTests(TestCase):
   - _[Coming later: sse & stdio]_
 - ✅ Auto-generated tool input/output schemas from DRF serializers
   - ✅ Required/optional inferred automatically
-  - ✅ Constraints (min/max length, min/max value) inferred automatically
+  - ✅ Constraints (min/max length, min/max value, regex pattern, allow_null, allow_blank) and formatting (ex: url, email, etc.) inferred automatically
   - ✅ help_text/label passed back to MCP Client as parameter title and description
   - ✅ Primitive types (string/int/float/bool/datetime/date/time/UUID)
+  - ✅ Composite fields (List/Dict/JSON)
+  - ✅ Enum fields (Choice/ManyChoice)
+  - ✅ Related fields (PKRelated/SlugRelated/HyperlinkedRelated/ManyRelated)
   - ✅ Nested Serializers
   - ✅ ListSerializers
-  - ✅ Formatting inferred and passed back to MCP Client as part of field description.
-  - ✅ Related fields (PKRelated/SlugRelated/HyperlinkedRelated/ManyRelated)
 - ✅ Test utilities for MCP tools
 - ✅ Authentication
 

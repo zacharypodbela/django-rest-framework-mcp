@@ -1821,6 +1821,149 @@ class TestRelationshipFieldsInSerializers(unittest.TestCase):
         self.assertEqual(schema["properties"]["category_id"]["type"], "integer")
 
 
+class TestListFieldSchemas(unittest.TestCase):
+    """Test schema generation for ListField."""
+
+    def test_list_field_with_char_child(self):
+        """Test ListField with CharField child."""
+        field = serializers.ListField(child=serializers.CharField())
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+
+    def test_list_field_with_integer_child(self):
+        """Test ListField with IntegerField child."""
+        field = serializers.ListField(child=serializers.IntegerField())
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "integer")
+
+    def test_list_field_with_min_max_length(self):
+        """Test ListField with min_length and max_length constraints."""
+        field = serializers.ListField(
+            child=serializers.CharField(), min_length=2, max_length=5
+        )
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["minItems"], 2)
+        self.assertEqual(schema["maxItems"], 5)
+
+    def test_list_field_with_allow_empty_false(self):
+        """Test ListField with allow_empty=False."""
+        field = serializers.ListField(child=serializers.CharField(), allow_empty=False)
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["minItems"], 1)
+
+    def test_nested_list_field(self):
+        """Test nested ListField (array of arrays)."""
+        field = serializers.ListField(
+            child=serializers.ListField(child=serializers.CharField())
+        )
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "array")
+        self.assertEqual(schema["items"]["items"]["type"], "string")
+
+    def test_list_field_with_complex_child(self):
+        """Test ListField with child field that has constraints."""
+        field = serializers.ListField(
+            child=serializers.CharField(max_length=10, min_length=2)
+        )
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["maxLength"], 10)
+        self.assertEqual(schema["items"]["minLength"], 2)
+
+
+class TestDictFieldSchemas(unittest.TestCase):
+    """Test schema generation for DictField."""
+
+    def test_dict_field_with_char_child(self):
+        """Test DictField with CharField child."""
+        field = serializers.DictField(child=serializers.CharField())
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["additionalProperties"]["type"], "string")
+
+    def test_dict_field_with_integer_child(self):
+        """Test DictField with IntegerField child."""
+        field = serializers.DictField(child=serializers.IntegerField())
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["additionalProperties"]["type"], "integer")
+
+    def test_dict_field_with_allow_empty_false(self):
+        """Test DictField with allow_empty=False."""
+        field = serializers.DictField(child=serializers.CharField(), allow_empty=False)
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["minProperties"], 1)
+
+    def test_dict_field_with_complex_child(self):
+        """Test DictField with child field that has constraints."""
+        field = serializers.DictField(
+            child=serializers.IntegerField(min_value=0, max_value=100)
+        )
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["additionalProperties"]["type"], "integer")
+        self.assertEqual(schema["additionalProperties"]["minimum"], 0)
+        self.assertEqual(schema["additionalProperties"]["maximum"], 100)
+
+    def test_dict_field_with_boolean_child(self):
+        """Test DictField with BooleanField child."""
+        field = serializers.DictField(child=serializers.BooleanField())
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["additionalProperties"]["type"], "boolean")
+
+
+class TestJSONFieldSchemas(unittest.TestCase):
+    """Test schema generation for JSONField."""
+
+    def test_json_field_basic(self):
+        """Test basic JSONField generates permissive schema."""
+        field = serializers.JSONField()
+        schema = field_to_json_schema(field)
+        # JSONField should generate an empty schema (or very permissive one)
+        # Empty schema {} means any valid JSON is accepted
+        # We may add basic type constraint but it should accept any JSON value
+        self.assertIn(
+            schema,
+            [
+                {},  # Empty schema (most permissive)
+                {
+                    "type": ["object", "array", "string", "number", "boolean", "null"]
+                },  # All JSON types
+            ],
+        )
+
+    def test_json_field_with_allow_null(self):
+        """Test JSONField with allow_null=True."""
+        field = serializers.JSONField(allow_null=True)
+        schema = field_to_json_schema(field)
+        # Should still be permissive, null is already allowed in JSON
+        self.assertIn(
+            schema,
+            [
+                {},  # Empty schema (most permissive)
+                {
+                    "type": ["object", "array", "string", "number", "boolean", "null"]
+                },  # All JSON types
+            ],
+        )
+
+    def test_json_field_with_default(self):
+        """Test JSONField with default value."""
+        default_value = {"key": "value"}
+        field = serializers.JSONField(default=default_value)
+        schema = field_to_json_schema(field)
+        if "default" in schema:
+            self.assertEqual(schema["default"], default_value)
+
+
 class TestChoiceFieldSchemas(unittest.TestCase):
     """Test schema generation for ChoiceField and MultipleChoiceField."""
 
