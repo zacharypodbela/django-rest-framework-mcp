@@ -90,6 +90,23 @@ def get_time_schema(field: serializers.TimeField) -> Dict[str, Any]:
     return schema
 
 
+def get_ip_address_field_schema(field: serializers.IPAddressField) -> Dict[str, Any]:
+    """Generate schema for IPAddressField."""
+    schema = {"type": "string"}
+
+    # IPAddressField uses function validators, not regex validators
+    # We can provide format description but no regex pattern
+    protocol = getattr(field, "protocol", "both")
+    if protocol == "IPv4":
+        schema["description"] = "Valid IPv4 address (e.g., 192.168.1.1)"
+    elif protocol == "IPv6":
+        schema["description"] = "Valid IPv6 address (e.g., 2001:db8::1)"
+    else:
+        schema["description"] = "Valid IPv4 or IPv6 address"
+
+    return schema
+
+
 def get_choice_field_schema(field: serializers.ChoiceField) -> Dict[str, Any]:
     """Generate schema for ChoiceField."""
     # Get the flat choices dict (handles grouped choices)
@@ -285,6 +302,7 @@ FIELD_TYPE_REGISTRY = {
     serializers.IntegerField: get_integer_schema,
     serializers.FloatField: get_float_schema,
     serializers.DecimalField: get_decimal_schema,
+    serializers.IPAddressField: get_ip_address_field_schema,
     serializers.CharField: get_char_schema,
     serializers.EmailField: get_email_schema,
     serializers.URLField: get_url_schema,
@@ -370,6 +388,13 @@ def field_to_json_schema(field: Field) -> Dict[str, Any]:
         current_min_length = getattr(field, "min_length", None)
         if current_min_length is None or current_min_length < 1:
             schema["minLength"] = 1
+
+    # Apply regex pattern validation rules (pattern)
+    if hasattr(field, "_validators"):
+        for validator in field._validators:
+            if hasattr(validator, "regex"):
+                schema["pattern"] = validator.regex.pattern
+                break
 
     # Apply default value if present
     if hasattr(field, "default") and field.default is not serializers.empty:

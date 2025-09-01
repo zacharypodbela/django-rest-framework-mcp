@@ -214,6 +214,73 @@ class TestFieldToJsonSchema(unittest.TestCase):
             "When the event occurred. DateTime in format: ISO-8601",
         )
 
+    def test_regex_field_basic_schema(self):
+        """Test RegexField with simple regex pattern generates correct schema."""
+        field = serializers.RegexField(
+            regex=r"^\+?1?\d{9,15}$", help_text="Phone number"
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["pattern"], r"^\+?1?\d{9,15}$")
+        self.assertEqual(schema["description"], "Phone number")
+
+    def test_regex_field_with_constraints_schema(self):
+        """Test RegexField with length constraints."""
+        field = serializers.RegexField(
+            regex=r"^[A-Z]{2}-\d{4}$",
+            max_length=10,
+            min_length=7,
+            help_text="Product code format: XX-1234",
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["pattern"], r"^[A-Z]{2}-\d{4}$")
+        self.assertEqual(schema["maxLength"], 10)
+        self.assertEqual(schema["minLength"], 7)
+        self.assertEqual(schema["description"], "Product code format: XX-1234")
+
+    def test_regex_field_with_help_text_schema(self):
+        """Test RegexField help text doesn't interfere with pattern."""
+        field = serializers.RegexField(
+            regex=r"^[a-zA-Z0-9_-]+$",
+            help_text="Alphanumeric characters, underscores, and hyphens only",
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["pattern"], r"^[a-zA-Z0-9_-]+$")
+        self.assertEqual(
+            schema["description"],
+            "Alphanumeric characters, underscores, and hyphens only",
+        )
+
+    def test_slug_field_schema(self):
+        """Test SlugField generates schema with correct slug pattern."""
+        field = serializers.SlugField(help_text="URL-friendly identifier")
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertIn("pattern", schema)  # Should inherit regex pattern from SlugField
+        self.assertEqual(schema["description"], "URL-friendly identifier")
+        # Verify it's a valid slug pattern
+        self.assertRegex("hello-world", schema["pattern"])
+        self.assertRegex("test_123", schema["pattern"])
+
+    def test_ip_address_field_schema(self):
+        """Test IPAddressField generates schema with IP validation description."""
+        field = serializers.IPAddressField(help_text="Server IP address")
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        # IPAddressField uses function validators, not regex, so no pattern
+        self.assertNotIn("pattern", schema)
+        # Should have IP-specific description from the field handler
+        self.assertIn("IPv4 or IPv6", schema["description"])
+        # Help text should be combined with the field description
+        self.assertIn("Server IP address", schema["description"])
+
 
 class TestSerializerToJsonSchema(unittest.TestCase):
     """Test get_serializer_schema function."""
