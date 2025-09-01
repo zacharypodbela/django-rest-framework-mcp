@@ -203,7 +203,15 @@ class DRFRegressionTests(TestCase):
 
         # Check first product data structure
         product_data = data[0]
-        expected_fields = {"id", "name", "description", "price", "in_stock"}
+        expected_fields = {
+            "id",
+            "name",
+            "description",
+            "price",
+            "in_stock",
+            "category",
+            "slug",
+        }
         self.assertEqual(set(product_data.keys()), expected_fields)
 
         # Verify actual data

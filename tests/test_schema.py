@@ -39,7 +39,8 @@ class TestFieldToJsonSchema(unittest.TestCase):
 
         self.assertEqual(schema["type"], "string")
         self.assertNotIn("maxLength", schema)
-        self.assertNotIn("minLength", schema)
+        # CharField with default allow_blank=False should have minLength: 1
+        self.assertEqual(schema["minLength"], 1)
 
     def test_integer_field(self):
         """Test IntegerField conversion."""
@@ -212,6 +213,73 @@ class TestFieldToJsonSchema(unittest.TestCase):
             schema["description"],
             "When the event occurred. DateTime in format: ISO-8601",
         )
+
+    def test_regex_field_basic_schema(self):
+        """Test RegexField with simple regex pattern generates correct schema."""
+        field = serializers.RegexField(
+            regex=r"^\+?1?\d{9,15}$", help_text="Phone number"
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["pattern"], r"^\+?1?\d{9,15}$")
+        self.assertEqual(schema["description"], "Phone number")
+
+    def test_regex_field_with_constraints_schema(self):
+        """Test RegexField with length constraints."""
+        field = serializers.RegexField(
+            regex=r"^[A-Z]{2}-\d{4}$",
+            max_length=10,
+            min_length=7,
+            help_text="Product code format: XX-1234",
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["pattern"], r"^[A-Z]{2}-\d{4}$")
+        self.assertEqual(schema["maxLength"], 10)
+        self.assertEqual(schema["minLength"], 7)
+        self.assertEqual(schema["description"], "Product code format: XX-1234")
+
+    def test_regex_field_with_help_text_schema(self):
+        """Test RegexField help text doesn't interfere with pattern."""
+        field = serializers.RegexField(
+            regex=r"^[a-zA-Z0-9_-]+$",
+            help_text="Alphanumeric characters, underscores, and hyphens only",
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["pattern"], r"^[a-zA-Z0-9_-]+$")
+        self.assertEqual(
+            schema["description"],
+            "Alphanumeric characters, underscores, and hyphens only",
+        )
+
+    def test_slug_field_schema(self):
+        """Test SlugField generates schema with correct slug pattern."""
+        field = serializers.SlugField(help_text="URL-friendly identifier")
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertIn("pattern", schema)  # Should inherit regex pattern from SlugField
+        self.assertEqual(schema["description"], "URL-friendly identifier")
+        # Verify it's a valid slug pattern
+        self.assertRegex("hello-world", schema["pattern"])
+        self.assertRegex("test_123", schema["pattern"])
+
+    def test_ip_address_field_schema(self):
+        """Test IPAddressField generates schema with IP validation description."""
+        field = serializers.IPAddressField(help_text="Server IP address")
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        # IPAddressField uses function validators, not regex, so no pattern
+        self.assertNotIn("pattern", schema)
+        # Should have IP-specific description from the field handler
+        self.assertIn("IPv4 or IPv6", schema["description"])
+        # Help text should be combined with the field description
+        self.assertIn("Server IP address", schema["description"])
 
 
 class TestSerializerToJsonSchema(unittest.TestCase):
@@ -724,6 +792,335 @@ class TestReadOnlyFieldHandling(unittest.TestCase):
         self.assertIn("value", schema["required"])
 
 
+class TestSchemaRequiredFields(unittest.TestCase):
+    """Test that schema correctly determines required fields for different serializer types."""
+
+    def test_model_serializer_required_fields(self):
+        """Test all cases of required field determination for ModelSerializer."""
+        from .models import RequiredFieldsTestModel
+
+        class TestSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = RequiredFieldsTestModel
+                fields = [
+                    "basic_required",
+                    "with_default",
+                    "with_blank",
+                    "with_null",
+                    "with_blank_and_null",
+                    "bool_with_default",
+                    "unique_with_blank_null",
+                    "unique_no_blank",
+                    "unique_with_default",
+                    "auto_field",
+                    "created_at",
+                    "updated_at",
+                ]
+
+        serializer = TestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        # Check which fields are marked as required
+        required_fields = set(schema.get("required", []))
+
+        # Case 1: Basic field without blank/null/default should be required
+        self.assertIn("basic_required", required_fields)
+
+        # Case 2: Field with default should NOT be required
+        self.assertNotIn("with_default", required_fields)
+
+        # Case 3: Field with blank=True should NOT be required
+        self.assertNotIn("with_blank", required_fields)
+
+        # Case 4: Field with null=True should NOT be required
+        self.assertNotIn("with_null", required_fields)
+
+        # Case 5: Field with both blank and null should NOT be required
+        self.assertNotIn("with_blank_and_null", required_fields)
+
+        # Case 6: BooleanField with default should NOT be required
+        self.assertNotIn("bool_with_default", required_fields)
+
+        # Case 7: Unique field with blank/null should NOT be required
+        self.assertNotIn("unique_with_blank_null", required_fields)
+
+        # Case 7b: Unique field without blank/null SHOULD be required
+        self.assertIn("unique_no_blank", required_fields)
+
+        # Case 8: Unique field WITH default should NOT be required
+        self.assertNotIn("unique_with_default", required_fields)
+
+        # Cases 9-11: Read-only fields should not be in properties at all
+        self.assertNotIn("auto_field", schema["properties"])
+        self.assertNotIn("created_at", schema["properties"])
+        self.assertNotIn("updated_at", schema["properties"])
+
+    def test_explicit_required_override(self):
+        """Test that explicit required=True/False overrides model field settings."""
+        from .models import RequiredFieldsTestModel
+
+        class ExplicitSerializer(serializers.ModelSerializer):
+            # Explicitly mark a normally optional field as required
+            with_blank = serializers.CharField(required=True)
+            # Explicitly mark a normally required field as optional
+            basic_required = serializers.CharField(required=False)
+
+            class Meta:
+                model = RequiredFieldsTestModel
+                fields = ["basic_required", "with_blank"]
+
+        serializer = ExplicitSerializer()
+        schema = get_serializer_schema(serializer)
+        required_fields = set(schema.get("required", []))
+
+        # with_blank should now be required due to explicit override
+        self.assertIn("with_blank", required_fields)
+
+        # basic_required should NOT be required due to explicit override
+        self.assertNotIn("basic_required", required_fields)
+
+    def test_base_serializer_required_fields(self):
+        """Test required field determination for regular Serializer (not ModelSerializer)."""
+
+        class BaseTestSerializer(serializers.Serializer):
+            # Default behavior - required=True
+            default_required = serializers.CharField()
+
+            # Explicitly required
+            explicit_required = serializers.CharField(required=True)
+
+            # Explicitly optional
+            explicit_optional = serializers.CharField(required=False)
+
+            # With default value - automatically becomes optional in DRF
+            # (DRF doesn't even allow default + required=True)
+            with_default = serializers.CharField(default="default")
+
+            # Boolean with default - automatically optional
+            bool_with_default = serializers.BooleanField(default=True)
+
+            # Read-only field (should not appear in schema)
+            read_only_field = serializers.CharField(read_only=True)
+
+            # allow_blank makes it accept empty strings but doesn't affect required
+            allow_blank_field = serializers.CharField(allow_blank=True)
+
+            # allow_null makes it accept None but doesn't affect required
+            allow_null_field = serializers.IntegerField(allow_null=True)
+
+        serializer = BaseTestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        required_fields = set(schema.get("required", []))
+
+        # Test default behavior - fields are required by default
+        self.assertIn("default_required", required_fields)
+        self.assertIn("explicit_required", required_fields)
+
+        # Test explicitly optional fields
+        self.assertNotIn("explicit_optional", required_fields)
+
+        # In DRF, fields with defaults automatically become optional
+        # You cannot have both default and required=True
+        self.assertNotIn("with_default", required_fields)
+        self.assertNotIn("bool_with_default", required_fields)
+
+        # Read-only fields should not appear in schema at all
+        self.assertNotIn("read_only_field", schema["properties"])
+
+        # allow_blank and allow_null don't affect required status
+        self.assertIn("allow_blank_field", required_fields)
+        self.assertIn("allow_null_field", required_fields)
+
+    def test_allow_null_fields(self):
+        """Test that allow_null fields are properly represented in JSON Schema."""
+
+        class NullTestSerializer(serializers.Serializer):
+            # Standard field types without allow_null
+            string_no_null = serializers.CharField()
+            int_no_null = serializers.IntegerField()
+            bool_no_null = serializers.BooleanField()
+
+            # Fields with allow_null=True
+            string_allow_null = serializers.CharField(allow_null=True)
+            int_allow_null = serializers.IntegerField(allow_null=True)
+            bool_allow_null = serializers.BooleanField(allow_null=True)
+
+            # Combined with other options
+            string_null_optional = serializers.CharField(
+                allow_null=True, required=False
+            )
+            string_null_with_default = serializers.CharField(
+                allow_null=True, default="default"
+            )
+
+            # Email and URL fields with allow_null
+            email_allow_null = serializers.EmailField(allow_null=True)
+            url_allow_null = serializers.URLField(allow_null=True)
+
+        serializer = NullTestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        # Test non-null fields have simple types
+        self.assertEqual(schema["properties"]["string_no_null"]["type"], "string")
+        self.assertEqual(schema["properties"]["int_no_null"]["type"], "integer")
+        self.assertEqual(schema["properties"]["bool_no_null"]["type"], "boolean")
+
+        # Test allow_null fields have array types with null
+        self.assertEqual(
+            schema["properties"]["string_allow_null"]["type"], ["string", "null"]
+        )
+        self.assertEqual(
+            schema["properties"]["int_allow_null"]["type"], ["integer", "null"]
+        )
+        self.assertEqual(
+            schema["properties"]["bool_allow_null"]["type"], ["boolean", "null"]
+        )
+
+        # Test combined options still work
+        self.assertEqual(
+            schema["properties"]["string_null_optional"]["type"], ["string", "null"]
+        )
+        self.assertEqual(
+            schema["properties"]["string_null_with_default"]["type"], ["string", "null"]
+        )
+
+        # Test special field types with allow_null
+        self.assertEqual(
+            schema["properties"]["email_allow_null"]["type"], ["string", "null"]
+        )
+        self.assertEqual(
+            schema["properties"]["url_allow_null"]["type"], ["string", "null"]
+        )
+
+        # Format should still be preserved for special fields
+        self.assertEqual(schema["properties"]["email_allow_null"]["format"], "email")
+        self.assertEqual(schema["properties"]["url_allow_null"]["format"], "uri")
+
+        # Required status should be unaffected by allow_null
+        required_fields = set(schema.get("required", []))
+        self.assertIn("string_allow_null", required_fields)
+        self.assertIn("int_allow_null", required_fields)
+        self.assertIn("bool_allow_null", required_fields)
+        self.assertNotIn("string_null_optional", required_fields)
+        self.assertNotIn("string_null_with_default", required_fields)
+
+    def test_model_serializer_allow_null(self):
+        """Test that ModelSerializer correctly handles allow_null from model fields."""
+        from .models import RequiredFieldsTestModel
+
+        class ModelNullTestSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = RequiredFieldsTestModel
+                fields = ["with_null", "with_blank_and_null", "unique_with_blank_null"]
+
+        serializer = ModelNullTestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        # with_null (IntegerField with null=True) should allow null
+        self.assertEqual(schema["properties"]["with_null"]["type"], ["integer", "null"])
+
+        # with_blank_and_null (CharField with both) should allow null
+        self.assertEqual(
+            schema["properties"]["with_blank_and_null"]["type"], ["string", "null"]
+        )
+
+        # unique field with blank and null should also allow null
+        self.assertEqual(
+            schema["properties"]["unique_with_blank_null"]["type"], ["string", "null"]
+        )
+
+    def test_allow_blank_fields(self):
+        """Test that allow_blank fields are properly represented with minLength."""
+
+        class BlankTestSerializer(serializers.Serializer):
+            # Standard fields without allow_blank (default is allow_blank=False)
+            string_no_blank = serializers.CharField()
+            email_no_blank = serializers.EmailField()
+            url_no_blank = serializers.URLField()
+
+            # Fields with allow_blank=True (should not have minLength: 1)
+            string_allow_blank = serializers.CharField(allow_blank=True)
+            email_allow_blank = serializers.EmailField(allow_blank=True)
+            url_allow_blank = serializers.URLField(allow_blank=True)
+
+            # Fields with explicit min_length (should preserve that, not add minLength: 1)
+            string_min_length_3 = serializers.CharField(min_length=3, allow_blank=False)
+            string_min_length_0_no_blank = serializers.CharField(
+                min_length=0, allow_blank=False
+            )
+
+            # Combined with other options
+            string_blank_optional = serializers.CharField(
+                allow_blank=True, required=False
+            )
+            string_blank_with_null = serializers.CharField(
+                allow_blank=True, allow_null=True
+            )
+            string_no_blank_with_null = serializers.CharField(
+                allow_blank=False, allow_null=True
+            )
+
+        serializer = BlankTestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        # Test non-blank fields have minLength: 1 when no explicit min_length is set
+        self.assertEqual(schema["properties"]["string_no_blank"]["minLength"], 1)
+        self.assertEqual(schema["properties"]["email_no_blank"]["minLength"], 1)
+        self.assertEqual(schema["properties"]["url_no_blank"]["minLength"], 1)
+
+        # Test allow_blank fields do NOT have minLength constraint
+        self.assertNotIn("minLength", schema["properties"]["string_allow_blank"])
+        self.assertNotIn("minLength", schema["properties"]["email_allow_blank"])
+        self.assertNotIn("minLength", schema["properties"]["url_allow_blank"])
+
+        # Test explicit min_length is preserved, not overridden
+        self.assertEqual(schema["properties"]["string_min_length_3"]["minLength"], 3)
+        # min_length=0 with allow_blank=False should become minLength: 1
+        self.assertEqual(
+            schema["properties"]["string_min_length_0_no_blank"]["minLength"], 1
+        )
+
+        # Test combined options
+        self.assertNotIn("minLength", schema["properties"]["string_blank_optional"])
+        self.assertNotIn("minLength", schema["properties"]["string_blank_with_null"])
+        self.assertEqual(
+            schema["properties"]["string_no_blank_with_null"]["minLength"], 1
+        )
+        self.assertEqual(
+            schema["properties"]["string_no_blank_with_null"]["type"],
+            ["string", "null"],
+        )
+
+        # Other properties should be preserved
+        self.assertEqual(schema["properties"]["email_allow_blank"]["format"], "email")
+        self.assertEqual(schema["properties"]["url_allow_blank"]["format"], "uri")
+
+    def test_model_serializer_allow_blank(self):
+        """Test that ModelSerializer correctly handles allow_blank from model fields."""
+        from .models import RequiredFieldsTestModel
+
+        class ModelBlankTestSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = RequiredFieldsTestModel
+                fields = ["basic_required", "with_blank", "with_blank_and_null"]
+
+        serializer = ModelBlankTestSerializer()
+        schema = get_serializer_schema(serializer)
+
+        # basic_required (no blank) should have minLength: 1
+        self.assertEqual(schema["properties"]["basic_required"]["minLength"], 1)
+
+        # with_blank (CharField with blank=True) should not have minLength
+        self.assertNotIn("minLength", schema["properties"]["with_blank"])
+
+        # with_blank_and_null should allow both blank and null
+        self.assertNotIn("minLength", schema["properties"]["with_blank_and_null"])
+        self.assertEqual(
+            schema["properties"]["with_blank_and_null"]["type"], ["string", "null"]
+        )
+
+
 class TestListSerializerSchemaGeneration(unittest.TestCase):
     """Test schema generation for list serializers."""
 
@@ -1139,6 +1536,678 @@ class TestEnhancedLookupFieldSupport(unittest.TestCase):
         # Check resource name in description
         slug_property = kwargs_info["schema"]["properties"]["slug"]
         self.assertEqual(slug_property["description"], "The slug of the customer")
+
+
+class TestRelationshipFieldSchemas(unittest.TestCase):
+    """Test schema generation for relationship fields."""
+
+    def test_primary_key_related_field_integer(self):
+        """Test PrimaryKeyRelatedField with integer PK."""
+        from .models import Customer
+
+        field = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.all())
+        schema = field_to_json_schema(field)
+
+        # Should be integer type for default AutoField PK
+        self.assertEqual(schema["type"], "integer")
+
+    def test_primary_key_related_field_with_allow_null(self):
+        """Test PrimaryKeyRelatedField with allow_null=True."""
+        from .models import Customer
+
+        field = serializers.PrimaryKeyRelatedField(
+            queryset=Customer.objects.all(), allow_null=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should handle nullable
+        # Could be {"type": ["integer", "null"]} or {"type": "integer", "nullable": true}
+        # depending on implementation
+        self.assertIn("type", schema)
+
+    def test_primary_key_related_field_many(self):
+        """Test PrimaryKeyRelatedField with many=True becomes ManyRelatedField."""
+        from .models import Customer
+
+        # When many=True, DRF wraps it in ManyRelatedField
+        field = serializers.PrimaryKeyRelatedField(
+            queryset=Customer.objects.all(), many=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should be array of integers
+        self.assertEqual(schema["type"], "array")
+        self.assertIn("items", schema)
+        self.assertEqual(schema["items"]["type"], "integer")
+
+    def test_slug_related_field(self):
+        """Test SlugRelatedField schema generation."""
+        from .models import Category
+
+        field = serializers.SlugRelatedField(
+            queryset=Category.objects.all(), slug_field="slug"
+        )
+        schema = field_to_json_schema(field)
+
+        # Should be string type for slug
+        self.assertEqual(schema["type"], "string")
+        # Could include slug_field info in description
+        if "description" in schema:
+            self.assertIn("slug", schema["description"].lower())
+
+    def test_slug_related_field_with_allow_null(self):
+        """Test SlugRelatedField with allow_null=True."""
+        from .models import Category
+
+        field = serializers.SlugRelatedField(
+            queryset=Category.objects.all(), slug_field="slug", allow_null=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should handle nullable
+        self.assertIn("type", schema)
+
+    def test_slug_related_field_many(self):
+        """Test SlugRelatedField with many=True."""
+        from .models import Category
+
+        field = serializers.SlugRelatedField(
+            queryset=Category.objects.all(), slug_field="slug", many=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should be array of strings
+        self.assertEqual(schema["type"], "array")
+        self.assertIn("items", schema)
+        self.assertEqual(schema["items"]["type"], "string")
+
+    def test_hyperlinked_related_field(self):
+        """Test HyperlinkedRelatedField schema generation."""
+        from .models import Customer
+
+        field = serializers.HyperlinkedRelatedField(
+            queryset=Customer.objects.all(), view_name="customer-detail"
+        )
+        schema = field_to_json_schema(field)
+
+        # Should be string with URI format
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["format"], "uri")
+
+    def test_hyperlinked_related_field_many(self):
+        """Test HyperlinkedRelatedField with many=True."""
+        from .models import Customer
+
+        field = serializers.HyperlinkedRelatedField(
+            queryset=Customer.objects.all(), view_name="customer-detail", many=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should be array of URIs
+        self.assertEqual(schema["type"], "array")
+        self.assertIn("items", schema)
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["format"], "uri")
+
+    def test_many_related_field_wrapper(self):
+        """Test that ManyRelatedField properly wraps child field schema."""
+        from .models import Customer
+
+        # Create a PrimaryKeyRelatedField with many=True
+        # DRF internally creates ManyRelatedField(child=PrimaryKeyRelatedField())
+        field = serializers.PrimaryKeyRelatedField(
+            queryset=Customer.objects.all(), many=True
+        )
+        schema = field_to_json_schema(field)
+
+        # Should wrap child schema in array
+        self.assertEqual(schema["type"], "array")
+        self.assertIn("items", schema)
+        # Items should have the child field's schema
+        self.assertEqual(schema["items"]["type"], "integer")
+
+    def test_enhanced_field_descriptions(self):
+        """Test that relationship fields generate enhanced descriptions with actual field names."""
+        from .models import Category, Customer
+
+        # Test PrimaryKeyRelatedField includes actual PK field name and "object"
+        pk_field = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.all())
+        pk_schema = field_to_json_schema(pk_field)
+        self.assertIn("description", pk_schema)
+        description = pk_schema["description"]
+        self.assertIn("id", description)  # Should mention the actual PK field name
+        self.assertIn("customer", description.lower())  # Should mention the model
+        self.assertIn("object", description.lower())  # Should end with "object"
+        # Expected format: "Primary key (id) of customer object"
+        self.assertEqual(description, "Primary key (id) of customer object")
+
+        # Test SlugRelatedField includes actual slug field name in new format
+        slug_field = serializers.SlugRelatedField(
+            queryset=Category.objects.all(), slug_field="slug"
+        )
+        slug_schema = field_to_json_schema(slug_field)
+        self.assertIn("description", slug_schema)
+        slug_description = slug_schema["description"]
+        self.assertIn("slug", slug_description.lower())  # Should mention slug field
+        self.assertIn("category", slug_description.lower())  # Should mention model
+        self.assertIn("object", slug_description.lower())  # Should include "object"
+        # Expected format: "slug field of related category object"
+        self.assertEqual(slug_description, "slug field of related category object")
+
+        # Test SlugRelatedField with custom field name
+        custom_slug_field = serializers.SlugRelatedField(
+            queryset=Category.objects.all(), slug_field="name"
+        )
+        custom_schema = field_to_json_schema(custom_slug_field)
+        custom_description = custom_schema["description"]
+        self.assertIn("name", custom_description.lower())  # Should mention custom field
+        self.assertIn("category", custom_description.lower())  # Should mention model
+        # Expected format: "name field of related category object"
+        self.assertEqual(custom_description, "name field of related category object")
+
+
+class TestRelationshipFieldsInSerializers(unittest.TestCase):
+    """Test relationship fields within serializer schemas."""
+
+    def test_serializer_with_foreign_key(self):
+        """Test serializer with ForeignKey relationship."""
+        from .models import Customer
+
+        class OrderSerializer(serializers.Serializer):
+            id = serializers.IntegerField(read_only=True)
+            customer = serializers.PrimaryKeyRelatedField(
+                queryset=Customer.objects.all()
+            )
+            total = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+        schema = get_serializer_schema(OrderSerializer())
+
+        # Should include customer field as integer
+        self.assertIn("customer", schema["properties"])
+        self.assertEqual(schema["properties"]["customer"]["type"], "integer")
+        # Should be required
+        self.assertIn("customer", schema["required"])
+
+    def test_serializer_with_many_to_many(self):
+        """Test serializer with ManyToMany relationship."""
+        from .models import Product
+
+        class TagSerializer(serializers.Serializer):
+            name = serializers.CharField(max_length=50)
+            products = serializers.PrimaryKeyRelatedField(
+                queryset=Product.objects.all(), many=True, required=False
+            )
+
+        schema = get_serializer_schema(TagSerializer())
+
+        # Should include products field as array
+        self.assertIn("products", schema["properties"])
+        products_schema = schema["properties"]["products"]
+        self.assertEqual(products_schema["type"], "array")
+        self.assertEqual(products_schema["items"]["type"], "integer")
+        # Should not be required
+        self.assertNotIn("products", schema["required"])
+
+    def test_serializer_with_slug_relationship(self):
+        """Test serializer using SlugRelatedField."""
+        from .models import Category
+
+        class ProductSerializer(serializers.Serializer):
+            name = serializers.CharField(max_length=100)
+            price = serializers.DecimalField(max_digits=10, decimal_places=2)
+            category_slug = serializers.SlugRelatedField(
+                queryset=Category.objects.all(),
+                slug_field="slug",
+                source="category",
+                allow_null=True,
+            )
+
+        schema = get_serializer_schema(ProductSerializer())
+
+        # Should include category_slug as string array with null (since allow_null=True)
+        self.assertIn("category_slug", schema["properties"])
+        self.assertEqual(
+            schema["properties"]["category_slug"]["type"], ["string", "null"]
+        )
+
+    def test_serializer_with_hyperlinked_relationship(self):
+        """Test serializer using HyperlinkedRelatedField."""
+        from .models import Customer
+
+        class OrderSerializer(serializers.Serializer):
+            id = serializers.IntegerField(read_only=True)
+            customer_url = serializers.HyperlinkedRelatedField(
+                queryset=Customer.objects.all(),
+                view_name="customer-detail",
+                source="customer",
+            )
+            total = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+        schema = get_serializer_schema(OrderSerializer())
+
+        # Should include customer_url as URI string
+        self.assertIn("customer_url", schema["properties"])
+        customer_schema = schema["properties"]["customer_url"]
+        self.assertEqual(customer_schema["type"], "string")
+        self.assertEqual(customer_schema["format"], "uri")
+
+    def test_nested_serializer_with_relationships(self):
+        """Test nested serializers containing relationship fields."""
+        from .models import Category
+
+        class CategorySerializer(serializers.Serializer):
+            name = serializers.CharField()
+            slug = serializers.SlugField()
+
+        class ProductWithCategorySerializer(serializers.Serializer):
+            name = serializers.CharField()
+            price = serializers.DecimalField(max_digits=10, decimal_places=2)
+            category = CategorySerializer()  # Nested serializer
+            category_id = serializers.PrimaryKeyRelatedField(
+                queryset=Category.objects.all(), source="category", write_only=True
+            )
+
+        schema = get_serializer_schema(ProductWithCategorySerializer())
+
+        # Should include nested category object
+        self.assertIn("category", schema["properties"])
+        category_schema = schema["properties"]["category"]
+        self.assertEqual(category_schema["type"], "object")
+        self.assertIn("name", category_schema["properties"])
+        self.assertIn("slug", category_schema["properties"])
+
+        # Should include category_id for writing
+        self.assertIn("category_id", schema["properties"])
+        self.assertEqual(schema["properties"]["category_id"]["type"], "integer")
+
+
+class TestListFieldSchemas(unittest.TestCase):
+    """Test schema generation for ListField."""
+
+    def test_list_field_with_char_child(self):
+        """Test ListField with CharField child."""
+        field = serializers.ListField(child=serializers.CharField())
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+
+    def test_list_field_with_integer_child(self):
+        """Test ListField with IntegerField child."""
+        field = serializers.ListField(child=serializers.IntegerField())
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "integer")
+
+    def test_list_field_with_min_max_length(self):
+        """Test ListField with min_length and max_length constraints."""
+        field = serializers.ListField(
+            child=serializers.CharField(), min_length=2, max_length=5
+        )
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["minItems"], 2)
+        self.assertEqual(schema["maxItems"], 5)
+
+    def test_list_field_with_allow_empty_false(self):
+        """Test ListField with allow_empty=False."""
+        field = serializers.ListField(child=serializers.CharField(), allow_empty=False)
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["minItems"], 1)
+
+    def test_nested_list_field(self):
+        """Test nested ListField (array of arrays)."""
+        field = serializers.ListField(
+            child=serializers.ListField(child=serializers.CharField())
+        )
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "array")
+        self.assertEqual(schema["items"]["items"]["type"], "string")
+
+    def test_list_field_with_complex_child(self):
+        """Test ListField with child field that has constraints."""
+        field = serializers.ListField(
+            child=serializers.CharField(max_length=10, min_length=2)
+        )
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["maxLength"], 10)
+        self.assertEqual(schema["items"]["minLength"], 2)
+
+
+class TestDictFieldSchemas(unittest.TestCase):
+    """Test schema generation for DictField."""
+
+    def test_dict_field_with_char_child(self):
+        """Test DictField with CharField child."""
+        field = serializers.DictField(child=serializers.CharField())
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["additionalProperties"]["type"], "string")
+
+    def test_dict_field_with_integer_child(self):
+        """Test DictField with IntegerField child."""
+        field = serializers.DictField(child=serializers.IntegerField())
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["additionalProperties"]["type"], "integer")
+
+    def test_dict_field_with_allow_empty_false(self):
+        """Test DictField with allow_empty=False."""
+        field = serializers.DictField(child=serializers.CharField(), allow_empty=False)
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["minProperties"], 1)
+
+    def test_dict_field_with_complex_child(self):
+        """Test DictField with child field that has constraints."""
+        field = serializers.DictField(
+            child=serializers.IntegerField(min_value=0, max_value=100)
+        )
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["additionalProperties"]["type"], "integer")
+        self.assertEqual(schema["additionalProperties"]["minimum"], 0)
+        self.assertEqual(schema["additionalProperties"]["maximum"], 100)
+
+    def test_dict_field_with_boolean_child(self):
+        """Test DictField with BooleanField child."""
+        field = serializers.DictField(child=serializers.BooleanField())
+        schema = field_to_json_schema(field)
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["additionalProperties"]["type"], "boolean")
+
+
+class TestJSONFieldSchemas(unittest.TestCase):
+    """Test schema generation for JSONField."""
+
+    def test_json_field_basic(self):
+        """Test basic JSONField generates permissive schema."""
+        field = serializers.JSONField()
+        schema = field_to_json_schema(field)
+        # JSONField should generate an empty schema (or very permissive one)
+        # Empty schema {} means any valid JSON is accepted
+        # We may add basic type constraint but it should accept any JSON value
+        self.assertIn(
+            schema,
+            [
+                {},  # Empty schema (most permissive)
+                {
+                    "type": ["object", "array", "string", "number", "boolean", "null"]
+                },  # All JSON types
+            ],
+        )
+
+    def test_json_field_with_allow_null(self):
+        """Test JSONField with allow_null=True."""
+        field = serializers.JSONField(allow_null=True)
+        schema = field_to_json_schema(field)
+        # Should still be permissive, null is already allowed in JSON
+        self.assertIn(
+            schema,
+            [
+                {},  # Empty schema (most permissive)
+                {
+                    "type": ["object", "array", "string", "number", "boolean", "null"]
+                },  # All JSON types
+            ],
+        )
+
+    def test_json_field_with_default(self):
+        """Test JSONField with default value."""
+        default_value = {"key": "value"}
+        field = serializers.JSONField(default=default_value)
+        schema = field_to_json_schema(field)
+        if "default" in schema:
+            self.assertEqual(schema["default"], default_value)
+
+
+class TestDurationFieldSchemas(unittest.TestCase):
+    """Test schema generation for DurationField."""
+
+    def test_basic_duration_field(self):
+        """Test basic DurationField generates string schema."""
+        field = serializers.DurationField()
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertIn("format", schema)
+        self.assertEqual(schema["format"], "duration")
+        self.assertIn("description", schema)
+        self.assertIn("ISO 8601", schema["description"])
+
+    def test_duration_field_with_min_max(self):
+        """Test DurationField with min_value and max_value constraints."""
+        from datetime import timedelta
+
+        min_val = timedelta(hours=1)
+        max_val = timedelta(days=7)
+        field = serializers.DurationField(min_value=min_val, max_value=max_val)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["format"], "duration")
+        # Min/max values should be converted to ISO 8601 format
+        self.assertIn("minimum", schema)
+        self.assertIn("maximum", schema)
+        self.assertEqual(
+            schema["minimum"], "P0DT01H00M00S"
+        )  # 1 hour in Django's ISO format
+        self.assertEqual(
+            schema["maximum"], "P7DT00H00M00S"
+        )  # 7 days in Django's ISO format
+
+    def test_duration_field_with_help_text(self):
+        """Test DurationField with custom help text."""
+        field = serializers.DurationField(help_text="Enter a duration")
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["format"], "duration")
+        # Help text is combined with format description
+        self.assertIn("Enter a duration", schema["description"])
+        self.assertIn("ISO 8601", schema["description"])
+
+    def test_duration_field_required(self):
+        """Test required DurationField."""
+        field = serializers.DurationField(required=True)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["format"], "duration")
+        # Required is handled at serializer level, not field level
+
+    def test_duration_field_with_default(self):
+        """Test DurationField with default value."""
+        from datetime import timedelta
+
+        default_duration = timedelta(hours=2, minutes=30)
+        field = serializers.DurationField(default=default_duration)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["format"], "duration")
+        # Default should be converted to ISO 8601 format by Django's utility
+        self.assertIn("default", schema)
+        self.assertEqual(schema["default"], "P0DT02H30M00S")  # Django's format
+
+
+class TestChoiceFieldSchemas(unittest.TestCase):
+    """Test schema generation for ChoiceField and MultipleChoiceField."""
+
+    def test_choice_field_with_string_choices(self):
+        """Test ChoiceField with simple string choices."""
+        field = serializers.ChoiceField(choices=["draft", "published", "archived"])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["draft", "published", "archived"])
+
+    def test_choice_field_with_integer_choices(self):
+        """Test ChoiceField with integer choices."""
+        field = serializers.ChoiceField(choices=[1, 2, 3])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["1", "2", "3"])
+
+    def test_choice_field_with_mixed_type_choices(self):
+        """Test ChoiceField with mixed type choices."""
+        field = serializers.ChoiceField(choices=[1, "two", 3.0])
+        schema = field_to_json_schema(field)
+
+        # All enum values are converted to strings for MCP compliance
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["1", "two", "3.0"])
+
+    def test_choice_field_with_paired_choices(self):
+        """Test ChoiceField with (value, display) pairs."""
+        choices = [
+            ("draft", "Draft Status"),
+            ("published", "Published Status"),
+            ("archived", "Archived Status"),
+        ]
+        field = serializers.ChoiceField(choices=choices)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["draft", "published", "archived"])
+        # Should include clear key-value mappings
+        self.assertIn("description", schema)
+        self.assertIn('"draft" = Draft Status', schema["description"])
+        self.assertIn('"published" = Published Status', schema["description"])
+        self.assertIn('"archived" = Archived Status', schema["description"])
+
+    def test_choice_field_with_integer_paired_choices(self):
+        """Test ChoiceField with integer (value, display) pairs."""
+        choices = [(1, "First"), (2, "Second"), (3, "Third")]
+        field = serializers.ChoiceField(choices=choices)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["1", "2", "3"])
+
+    def test_choice_field_with_grouped_choices(self):
+        """Test ChoiceField with grouped choices."""
+        choices = [
+            ("Status", [("draft", "Draft"), ("published", "Published")]),
+            ("Type", [("article", "Article"), ("page", "Page")]),
+        ]
+        field = serializers.ChoiceField(choices=choices)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        # Should flatten grouped choices (all strings already)
+        self.assertEqual(set(schema["enum"]), {"draft", "published", "article", "page"})
+
+    def test_choice_field_with_allow_blank(self):
+        """Test ChoiceField with allow_blank=True."""
+        field = serializers.ChoiceField(
+            choices=["draft", "published"], allow_blank=True
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], ["draft", "published", ""])
+
+    def test_choice_field_with_default(self):
+        """Test ChoiceField with default value."""
+        field = serializers.ChoiceField(choices=["draft", "published"], default="draft")
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["default"], "draft")
+
+    def test_multiple_choice_field_basic(self):
+        """Test MultipleChoiceField with string choices."""
+        field = serializers.MultipleChoiceField(choices=["tag1", "tag2", "tag3"])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["enum"], ["tag1", "tag2", "tag3"])
+
+    def test_multiple_choice_field_with_integer_choices(self):
+        """Test MultipleChoiceField with integer choices."""
+        field = serializers.MultipleChoiceField(choices=[1, 2, 3])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["enum"], ["1", "2", "3"])
+
+    def test_multiple_choice_field_with_allow_empty_false(self):
+        """Test MultipleChoiceField with allow_empty=False."""
+        field = serializers.MultipleChoiceField(
+            choices=["tag1", "tag2", "tag3"], allow_empty=False
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["minItems"], 1)
+
+    def test_multiple_choice_field_with_allow_empty_true(self):
+        """Test MultipleChoiceField with allow_empty=True (default)."""
+        field = serializers.MultipleChoiceField(choices=["tag1", "tag2", "tag3"])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertNotIn("minItems", schema)
+
+    def test_multiple_choice_field_with_paired_choices(self):
+        """Test MultipleChoiceField with (value, display) pairs."""
+        choices = [("python", "Python"), ("javascript", "JavaScript"), ("java", "Java")]
+        field = serializers.MultipleChoiceField(choices=choices)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["enum"], ["python", "javascript", "java"])
+
+    def test_multiple_choice_field_with_grouped_choices(self):
+        """Test MultipleChoiceField with grouped choices."""
+        choices = [
+            ("Languages", [("python", "Python"), ("javascript", "JavaScript")]),
+            ("Frameworks", [("django", "Django"), ("react", "React")]),
+        ]
+        field = serializers.MultipleChoiceField(choices=choices)
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        # Should flatten grouped choices
+        self.assertEqual(
+            set(schema["items"]["enum"]), {"python", "javascript", "django", "react"}
+        )
+
+    def test_multiple_choice_field_with_help_text(self):
+        """Test MultipleChoiceField with help_text."""
+        field = serializers.MultipleChoiceField(
+            choices=["tag1", "tag2", "tag3"], help_text="Select multiple tags"
+        )
+        schema = field_to_json_schema(field)
+
+        self.assertIn("description", schema)
+        self.assertIn("Select multiple tags", schema["description"])
+
+    def test_choice_field_with_empty_choices(self):
+        """Test ChoiceField with empty choices list."""
+        field = serializers.ChoiceField(choices=[])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "string")
+        self.assertEqual(schema["enum"], [])  # Empty enum to show no values are valid
+        self.assertNotIn("description", schema)  # No description for empty choices
+
+    def test_multiple_choice_field_with_empty_choices(self):
+        """Test MultipleChoiceField with empty choices list."""
+        field = serializers.MultipleChoiceField(choices=[])
+        schema = field_to_json_schema(field)
+
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["items"]["type"], "string")
+        self.assertEqual(schema["items"]["enum"], [])  # Empty enum in items
 
 
 if __name__ == "__main__":

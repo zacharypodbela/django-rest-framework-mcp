@@ -470,13 +470,14 @@ class CustomerMCPTests(TestCase):
   - _[Coming later: sse & stdio]_
 - ✅ Auto-generated tool input/output schemas from DRF serializers
   - ✅ Required/optional inferred automatically
-  - ✅ Constraints (min/max length, min/max value) inferred automatically
+  - ✅ Constraints (min/max length, min/max value, regex pattern, allow_null, allow_blank) and formatting (ex: url, email, etc.) inferred automatically
   - ✅ help_text/label passed back to MCP Client as parameter title and description
-  - ✅ Primitive types (string/int/float/bool/datetime/date/time/UUID)
+  - ✅ Primitive types (string/int/float/bool/datetime/date/time/timedelta/UUID)
+  - ✅ Composite fields (List/Dict/JSON)
+  - ✅ Enum fields (Choice/ManyChoice)
+  - ✅ Related fields (PKRelated/SlugRelated/HyperlinkedRelated/ManyRelated)
   - ✅ Nested Serializers
   - ✅ ListSerializers
-  - ✅ Formatting inferred and passed back to MCP Client as part of field description.
-  - _[Coming later: additional advanced types]_
 - ✅ Test utilities for MCP tools
 - ✅ Authentication
 
@@ -488,13 +489,7 @@ class CustomerMCPTests(TestCase):
 
 - Browsable UI of MCP tool, resource, and prompts discovery and invocation
 
-- Decorate custom validators with instructions (which will be shared with the MCP Client)
-
-- Relationship fields (PK/Slug/StringRelated)
-
-- Arrays/objects/JSONB fields
-
-- Enum fields
+- Support for specifying instructions for LLM when using custom validators
 
 - Support for other kwargs besides the lookup_url_kwarg.
 
@@ -514,19 +509,11 @@ class CustomerMCPTests(TestCase):
 
 - Versioning (URLPathVersioning/NamespaceVersioning/AcceptHeaderVersioning/HostNameVersioning)
 
-- Non-JSON Inputs (FormParser/MultiPartParser/FileUploadParser) [Not sure if this is even possible]
+- File Fields / `multipart/form-data` (FileField/ImageField/etc.)
 
-- Advertising custom headers, kwargs to MCP Clients
+- Advertising additional headers to MCP Clients
 
 - Standalone stdio MCP server
-
-- HyperlinkedModelSerializer, HyperlinkedIdentityField support [It might actually make most sense to do something like this as the default when we get to supporting Relationships. Giving the LLM the context on the relevant tools it can use to operate on the object along with it's FK / info.]
-
-- Custom classes - pagination, permission, authentication, etc.
-
-- Object-level permissions (DjangoObjectPermissions)
-
-- Model permissions (DjangoModelPermissions)
 
 - Depth-based serialization support
 
@@ -535,8 +522,6 @@ class CustomerMCPTests(TestCase):
 - Async views/endpoints support
 
 - Streaming responses [Not sure if this is even possible]
-
-- Caching headers support
 
 ## API Reference
 
