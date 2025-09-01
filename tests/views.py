@@ -6,7 +6,7 @@ from rest_framework.authentication import (
     SessionAuthentication,
     TokenAuthentication,
 )
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from djangorestframework_mcp.decorators import mcp_viewset
@@ -44,7 +44,7 @@ class CustomPermission(IsAuthenticated):
     message = "Custom permission denied"
 
 
-class AlwaysDenyPermission:
+class AlwaysDenyPermission(BasePermission):
     """Permission class that always denies but doesn't require auth."""
 
     message = "Custom permission denied"
