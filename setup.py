@@ -7,7 +7,7 @@ with open("README.md", encoding="utf-8") as fh:
 
 setup(
     name="django-rest-framework-mcp",
-    version="0.1.0a2",
+    version="0.1.0a3",
     author="Django REST Framework MCP Contributors",
     description="Expose Django REST Framework APIs as MCP servers for LLMs",
     long_description=long_description,

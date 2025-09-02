@@ -157,4 +157,3 @@ class OrderFactory(factory.django.DjangoModelFactory):
                 "pydecimal", left_digits=2, right_digits=2, positive=True, max_value=50
             )
         )
-
