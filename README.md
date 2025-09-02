@@ -3,9 +3,18 @@
 [![PyPI version](https://badge.fury.io/py/django-rest-framework-mcp.svg)](https://badge.fury.io/py/django-rest-framework-mcp)
 [![Python versions](https://img.shields.io/pypi/pyversions/django-rest-framework-mcp.svg)](https://pypi.org/project/django-rest-framework-mcp/)
 
-> ⚠️ **Alpha Release**: This library is in early alpha stage. APIs may change and there may be bugs. Use with caution in production environments. We welcome feedback and contributions!
+`django-rest-framework-mcp` allows you to spin up MCP servers that expose your Django Rest Framework APIs as MCP tools with just a few lines of code.
 
-`django-rest-framework-mcp` allows you to quickly build MCP servers that expose your Django Rest Framework APIs as tools for LLMs and agentic applications to work with.
+Supercharge your admin workflows (and make developing Admin interfaces a thing of the past):
+
+- "Deactivate josh@gmail.com's account" → Actually deactivates it
+- "Extend jack@teams.com's free trial by 1 week" → Updates their plan
+- "How many new users joined week-over-week?" → Returns real data → LLMs can quickly create graphs _(no more complex FE graphing libraries needed)_
+
+Or transform your traditional, boring SaaS UX with conversational interactions:
+
+- Old way: User Clicks "Manage", Clicks "My Posts", Clicks a post from the list, Clicks "Edit", changes the title, Clicks "Save"
+- With Django Rest Framework MCP: "Can you rename my post from 'Beginners Guide to Django' to 'Django 101'?"
 
 ## Quick Start
 
