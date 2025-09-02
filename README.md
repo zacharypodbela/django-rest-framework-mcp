@@ -14,7 +14,7 @@ Supercharge your admin workflows (and make developing Admin interfaces a thing o
 Or transform your traditional, boring SaaS UX with conversational interactions:
 
 - Old way: User Clicks "Manage", Clicks "My Posts", Clicks a post from the list, Clicks "Edit", changes the title, Clicks "Save"
-- With Django Rest Framework MCP: "Can you rename my post from 'Beginners Guide to Django' to 'Django 101'"
+- With Django Rest Framework MCP: "Can you rename my post from 'Beginners Guide to Django' to 'Django 101'?"
 
 ## Quick Start
 
