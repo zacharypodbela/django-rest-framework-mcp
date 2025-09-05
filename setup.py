@@ -31,7 +31,7 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "Django>=4.0,<5.0",
+        "Django>=4.0",
         "djangorestframework>=3.14.0",
     ],
     extras_require={
