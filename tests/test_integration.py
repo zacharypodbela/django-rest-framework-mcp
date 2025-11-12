@@ -2828,3 +2828,169 @@ class TestDurationFieldIntegration(MCPTestCase):
         self.assertIn("duration", required)
         self.assertIn("min_duration", required)
         self.assertNotIn("optional_duration", required)
+
+
+@override_settings(ROOT_URLCONF="tests.urls")
+class TestMCPExcludeBodyParamsIntegration(MCPTestCase):
+    """Integration tests for mcp_exclude_body_params() method."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        super().setUp()
+
+        # Create a serializer for testing
+        class TripSerializer(serializers.Serializer):
+            """Serializer with user_id that will be excluded for MCP."""
+
+            user_id = serializers.IntegerField()
+            advisor_id = serializers.IntegerField(required=False)
+            destination = serializers.CharField(max_length=200)
+            budget = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+        # Create ViewSet that excludes user_id from body
+        @mcp_viewset(basename="trips")
+        class TripViewSet(viewsets.GenericViewSet):
+            serializer_class = TripSerializer
+
+            def mcp_exclude_body_params(self):
+                """Exclude user_id from body params for all actions."""
+                return "user_id"
+
+            def create(self, request):
+                # In real app, user_id would come from request.user.id
+                data = request.data.copy()
+                data["user_id"] = 1  # Simulate getting from auth
+                serializer = self.get_serializer(data=data)
+                serializer.is_valid(raise_exception=True)
+                return Response(serializer.validated_data)
+
+        # Create ViewSet with action-specific exclusion
+        @mcp_viewset(basename="bookings")
+        class BookingViewSet(viewsets.GenericViewSet):
+            serializer_class = TripSerializer
+
+            def mcp_exclude_body_params(self):
+                """Exclude user_id only for create action."""
+                if self.action == "create":
+                    return ["user_id", "advisor_id"]
+                return []
+
+            def create(self, request):
+                data = request.data.copy()
+                data["user_id"] = 1
+                data.setdefault("advisor_id", 2)
+                serializer = self.get_serializer(data=data)
+                serializer.is_valid(raise_exception=True)
+                return Response(serializer.validated_data)
+
+            def update(self, request, pk=None):
+                serializer = self.get_serializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                return Response(serializer.validated_data)
+
+        self.viewsets = [TripViewSet, BookingViewSet]
+        self.client = MCPClient()
+
+    def tearDown(self):
+        """Clean up registered viewsets."""
+        registry.clear()
+        super().tearDown()
+
+    def test_excluded_param_not_in_tool_schema(self):
+        """Test that excluded parameters don't appear in tools/list schema."""
+        result = self.client.list_tools()
+        tools = result["tools"]
+
+        # Find create_trips tool
+        create_trips = next(t for t in tools if t["name"] == "create_trips")
+        body_schema = create_trips["inputSchema"]["properties"]["body"]
+
+        # user_id should NOT be in the schema
+        self.assertNotIn("user_id", body_schema["properties"])
+
+        # Other fields should still be present
+        self.assertIn("destination", body_schema["properties"])
+        self.assertIn("budget", body_schema["properties"])
+        self.assertIn("advisor_id", body_schema["properties"])
+
+    def test_excluded_param_not_required_in_tool_call(self):
+        """Test that tool calls work without excluded parameters."""
+        result = self.client.call_tool(
+            "create_trips",
+            {
+                "body": {
+                    "destination": "Paris",
+                    "budget": "2500.00",
+                    "advisor_id": 5,
+                }
+            },
+        )
+
+        # Should succeed without user_id in body
+        self.assertFalse(result.get("isError"))
+        data = result["structuredContent"]
+
+        # Response should include user_id (added by ViewSet)
+        self.assertEqual(data["user_id"], 1)
+        self.assertEqual(data["destination"], "Paris")
+        self.assertEqual(data["budget"], "2500.00")
+
+    def test_action_specific_exclusion(self):
+        """Test that exclusion can be action-specific."""
+        result = self.client.list_tools()
+        tools = result["tools"]
+
+        # Find create and update tools
+        create_bookings = next(t for t in tools if t["name"] == "create_bookings")
+        update_bookings = next(t for t in tools if t["name"] == "update_bookings")
+
+        create_body = create_bookings["inputSchema"]["properties"]["body"]
+        update_body = update_bookings["inputSchema"]["properties"]["body"]
+
+        # For create: user_id and advisor_id should be excluded
+        self.assertNotIn("user_id", create_body["properties"])
+        self.assertNotIn("advisor_id", create_body["properties"])
+        self.assertIn("destination", create_body["properties"])
+
+        # For update: all fields should be present
+        self.assertIn("user_id", update_body["properties"])
+        self.assertIn("advisor_id", update_body["properties"])
+        self.assertIn("destination", update_body["properties"])
+
+    def test_create_booking_without_excluded_params(self):
+        """Test creating a booking without excluded parameters."""
+        result = self.client.call_tool(
+            "create_bookings",
+            {"body": {"destination": "Tokyo", "budget": "3000.00"}},
+        )
+
+        # Should succeed
+        self.assertFalse(result.get("isError"))
+        data = result["structuredContent"]
+
+        # ViewSet should have added the excluded params
+        self.assertEqual(data["user_id"], 1)
+        self.assertEqual(data["advisor_id"], 2)
+        self.assertEqual(data["destination"], "Tokyo")
+
+    def test_update_booking_with_all_params(self):
+        """Test updating a booking requires all parameters (not excluded)."""
+        # For update action, exclusion list is empty, so all params are required
+        result = self.client.call_tool(
+            "update_bookings",
+            {
+                "kwargs": {"pk": "1"},
+                "body": {
+                    "user_id": 10,
+                    "advisor_id": 20,
+                    "destination": "London",
+                    "budget": "1500.00",
+                },
+            },
+        )
+
+        # Should succeed with all params
+        self.assertFalse(result.get("isError"))
+        data = result["structuredContent"]
+        self.assertEqual(data["user_id"], 10)
+        self.assertEqual(data["advisor_id"], 20)

@@ -563,6 +563,28 @@ def generate_body_schema(tool: MCPTool) -> Dict[str, Any]:
 
     body_schema = field_to_json_schema(serializer_class())
 
+    # Check if ViewSet has mcp_exclude_body_params method and apply exclusions
+    if hasattr(tool.viewset_class, "mcp_exclude_body_params"):
+        instance = tool.viewset_class()
+        instance.action = tool.action
+        excluded_params = instance.mcp_exclude_body_params()
+
+        # Handle both string and list return values
+        if isinstance(excluded_params, str):
+            excluded_params = [excluded_params]
+        elif excluded_params is None:
+            excluded_params = []
+
+        # Remove excluded parameters from the schema
+        if excluded_params and isinstance(body_schema, dict) and "properties" in body_schema:
+            for param in excluded_params:
+                if param in body_schema["properties"]:
+                    del body_schema["properties"][param]
+
+                # Also remove from required list if present
+                if "required" in body_schema and param in body_schema["required"]:
+                    body_schema["required"].remove(param)
+
     return {"schema": body_schema, "is_required": bool(body_schema.get("required"))}
 
 
