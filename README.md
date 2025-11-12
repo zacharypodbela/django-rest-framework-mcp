@@ -410,6 +410,67 @@ class CustomerViewSet(viewsets.ModelViewSet):
         return queryset
 ```
 
+### Excluding Parameters from Request Body
+
+Sometimes certain parameters in your serializer should come from sources other than the request body (like authentication context, headers, or URL parameters). You can exclude these parameters from the MCP tool input schema using the `mcp_exclude_body_params()` method:
+
+```python
+@mcp_viewset()
+class TripViewSet(viewsets.ModelViewSet):
+    serializer_class = TripSerializer  # Has user_id, destination, budget fields
+
+    def mcp_exclude_body_params(self):
+        # user_id will come from request.user.id after authentication
+        return "user_id"
+
+    def create(self, request, *args, **kwargs):
+        # Inject user_id from authenticated user
+        data = request.data.copy()
+        data['user_id'] = request.user.id
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.data)
+```
+
+The method can return:
+- A single parameter name as a string: `return "user_id"`
+- Multiple parameter names as a list: `return ["user_id", "organization_id"]`
+- An empty list or `None` to exclude nothing: `return []` or `return None`
+
+#### Action-Specific Exclusions
+
+You can use `self.action` to exclude parameters conditionally for specific actions:
+
+```python
+@mcp_viewset()
+class TripViewSet(viewsets.ModelViewSet):
+    def mcp_exclude_body_params(self):
+        # Only exclude user_id for create, not for update
+        if self.action == "create":
+            return "user_id"
+        return []
+```
+
+#### Using in Mixins
+
+This pattern works great with mixins for reusable exclusion logic:
+
+```python
+class UserContextMixin:
+    """Mixin that excludes user_id and injects it from auth context."""
+
+    def mcp_exclude_body_params(self):
+        return "user_id"
+
+    def perform_create(self, serializer):
+        serializer.save(user_id=self.request.user.id)
+
+@mcp_viewset()
+class TripViewSet(UserContextMixin, viewsets.ModelViewSet):
+    serializer_class = TripSerializer
+    # user_id automatically excluded and injected
+```
+
 ### Array Inputs
 
 For endpoints that accept arrays of data (like bulk operations), create a `ListSerializer` subclass and use it as your `input_serializer`:

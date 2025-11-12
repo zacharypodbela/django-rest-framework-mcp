@@ -2210,5 +2210,280 @@ class TestChoiceFieldSchemas(unittest.TestCase):
         self.assertEqual(schema["items"]["enum"], [])  # Empty enum in items
 
 
+class TestMCPExcludeBodyParams(unittest.TestCase):
+    """Test mcp_exclude_body_params() method for excluding parameters from body schema."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        registry.clear()
+
+    def test_exclude_single_param_as_string(self):
+        """Test excluding a single parameter returned as a string."""
+        from rest_framework import serializers, viewsets
+
+        from djangorestframework_mcp.decorators import mcp_viewset
+
+        class TestSerializer(serializers.Serializer):
+            user_id = serializers.IntegerField()
+            name = serializers.CharField()
+            email = serializers.EmailField()
+
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+
+            def mcp_exclude_body_params(self):
+                return "user_id"
+
+            def create(self, request):
+                pass
+
+        # Get create tool
+        tools = registry.get_all_tools()
+        create_tool = next(t for t in tools if t.action == "create")
+
+        # Generate body schema
+        body_info = generate_body_schema(create_tool)
+
+        # user_id should be excluded
+        self.assertNotIn("user_id", body_info["schema"]["properties"])
+        # Other fields should still be present
+        self.assertIn("name", body_info["schema"]["properties"])
+        self.assertIn("email", body_info["schema"]["properties"])
+
+    def test_exclude_multiple_params_as_list(self):
+        """Test excluding multiple parameters returned as a list."""
+        from rest_framework import serializers, viewsets
+
+        from djangorestframework_mcp.decorators import mcp_viewset
+
+        class TestSerializer(serializers.Serializer):
+            user_id = serializers.IntegerField()
+            organization_id = serializers.IntegerField()
+            name = serializers.CharField()
+            email = serializers.EmailField()
+
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+
+            def mcp_exclude_body_params(self):
+                return ["user_id", "organization_id"]
+
+            def create(self, request):
+                pass
+
+        # Get create tool
+        tools = registry.get_all_tools()
+        create_tool = next(t for t in tools if t.action == "create")
+
+        # Generate body schema
+        body_info = generate_body_schema(create_tool)
+
+        # Both excluded fields should not be present
+        self.assertNotIn("user_id", body_info["schema"]["properties"])
+        self.assertNotIn("organization_id", body_info["schema"]["properties"])
+        # Other fields should still be present
+        self.assertIn("name", body_info["schema"]["properties"])
+        self.assertIn("email", body_info["schema"]["properties"])
+
+    def test_exclude_action_specific(self):
+        """Test excluding parameters only for specific actions."""
+        from rest_framework import serializers, viewsets
+
+        from djangorestframework_mcp.decorators import mcp_viewset
+
+        class TestSerializer(serializers.Serializer):
+            user_id = serializers.IntegerField()
+            name = serializers.CharField()
+
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+
+            def mcp_exclude_body_params(self):
+                if self.action == "create":
+                    return "user_id"
+                return []
+
+            def create(self, request):
+                pass
+
+            def update(self, request, pk=None):
+                pass
+
+        # Get create and update tools
+        tools = registry.get_all_tools()
+        create_tool = next(t for t in tools if t.action == "create")
+        update_tool = next(t for t in tools if t.action == "update")
+
+        # Generate body schemas
+        create_body_info = generate_body_schema(create_tool)
+        update_body_info = generate_body_schema(update_tool)
+
+        # For create action, user_id should be excluded
+        self.assertNotIn("user_id", create_body_info["schema"]["properties"])
+        self.assertIn("name", create_body_info["schema"]["properties"])
+
+        # For update action, user_id should be present
+        self.assertIn("user_id", update_body_info["schema"]["properties"])
+        self.assertIn("name", update_body_info["schema"]["properties"])
+
+    def test_exclude_required_field(self):
+        """Test that excluded required fields are removed from required list."""
+        from rest_framework import serializers, viewsets
+
+        from djangorestframework_mcp.decorators import mcp_viewset
+
+        class TestSerializer(serializers.Serializer):
+            user_id = serializers.IntegerField(required=True)
+            name = serializers.CharField(required=True)
+            email = serializers.EmailField(required=False)
+
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+
+            def mcp_exclude_body_params(self):
+                return "user_id"
+
+            def create(self, request):
+                pass
+
+        # Get create tool
+        tools = registry.get_all_tools()
+        create_tool = next(t for t in tools if t.action == "create")
+
+        # Generate body schema
+        body_info = generate_body_schema(create_tool)
+
+        # user_id should not be in required list
+        self.assertNotIn("user_id", body_info["schema"]["required"])
+        # name should still be required
+        self.assertIn("name", body_info["schema"]["required"])
+        # email was optional, should not be in required
+        self.assertNotIn("email", body_info["schema"]["required"])
+
+    def test_exclude_nonexistent_field(self):
+        """Test that excluding a field that doesn't exist doesn't break schema generation."""
+        from rest_framework import serializers, viewsets
+
+        from djangorestframework_mcp.decorators import mcp_viewset
+
+        class TestSerializer(serializers.Serializer):
+            name = serializers.CharField()
+
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+
+            def mcp_exclude_body_params(self):
+                return "nonexistent_field"
+
+            def create(self, request):
+                pass
+
+        # Get create tool
+        tools = registry.get_all_tools()
+        create_tool = next(t for t in tools if t.action == "create")
+
+        # Generate body schema should not raise an error
+        body_info = generate_body_schema(create_tool)
+
+        # name should still be present
+        self.assertIn("name", body_info["schema"]["properties"])
+
+    def test_exclude_returns_none(self):
+        """Test that returning None from mcp_exclude_body_params() works correctly."""
+        from rest_framework import serializers, viewsets
+
+        from djangorestframework_mcp.decorators import mcp_viewset
+
+        class TestSerializer(serializers.Serializer):
+            user_id = serializers.IntegerField()
+            name = serializers.CharField()
+
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+
+            def mcp_exclude_body_params(self):
+                return None
+
+            def create(self, request):
+                pass
+
+        # Get create tool
+        tools = registry.get_all_tools()
+        create_tool = next(t for t in tools if t.action == "create")
+
+        # Generate body schema
+        body_info = generate_body_schema(create_tool)
+
+        # All fields should be present
+        self.assertIn("user_id", body_info["schema"]["properties"])
+        self.assertIn("name", body_info["schema"]["properties"])
+
+    def test_exclude_all_fields(self):
+        """Test excluding all fields from body schema."""
+        from rest_framework import serializers, viewsets
+
+        from djangorestframework_mcp.decorators import mcp_viewset
+
+        class TestSerializer(serializers.Serializer):
+            user_id = serializers.IntegerField()
+            name = serializers.CharField()
+
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+
+            def mcp_exclude_body_params(self):
+                return ["user_id", "name"]
+
+            def create(self, request):
+                pass
+
+        # Get create tool
+        tools = registry.get_all_tools()
+        create_tool = next(t for t in tools if t.action == "create")
+
+        # Generate body schema
+        body_info = generate_body_schema(create_tool)
+
+        # Properties should be empty
+        self.assertEqual(body_info["schema"]["properties"], {})
+        # Required should be empty
+        self.assertEqual(body_info["schema"]["required"], [])
+
+    def test_no_exclude_method(self):
+        """Test that ViewSets without mcp_exclude_body_params() method work normally."""
+        from rest_framework import serializers, viewsets
+
+        from djangorestframework_mcp.decorators import mcp_viewset
+
+        class TestSerializer(serializers.Serializer):
+            user_id = serializers.IntegerField()
+            name = serializers.CharField()
+
+        @mcp_viewset()
+        class TestViewSet(viewsets.GenericViewSet):
+            serializer_class = TestSerializer
+
+            def create(self, request):
+                pass
+
+        # Get create tool
+        tools = registry.get_all_tools()
+        create_tool = next(t for t in tools if t.action == "create")
+
+        # Generate body schema
+        body_info = generate_body_schema(create_tool)
+
+        # All fields should be present
+        self.assertIn("user_id", body_info["schema"]["properties"])
+        self.assertIn("name", body_info["schema"]["properties"])
+
+
 if __name__ == "__main__":
     unittest.main()
