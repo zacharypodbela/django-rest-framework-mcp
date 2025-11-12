@@ -576,7 +576,11 @@ def generate_body_schema(tool: MCPTool) -> Dict[str, Any]:
             excluded_params = []
 
         # Remove excluded parameters from the schema
-        if excluded_params and isinstance(body_schema, dict) and "properties" in body_schema:
+        if (
+            excluded_params
+            and isinstance(body_schema, dict)
+            and "properties" in body_schema
+        ):
             for param in excluded_params:
                 if param in body_schema["properties"]:
                     del body_schema["properties"][param]

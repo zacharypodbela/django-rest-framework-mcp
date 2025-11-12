@@ -148,7 +148,7 @@ class MCPView(View):
             # Add structured content if result is JSON-serializable
             try:
                 # Test if result can be JSON serialized (for structuredContent validation)
-                json.dumps(result)
+                json.dumps(result, default=str)
                 response["structuredContent"] = result
             except (TypeError, ValueError):
                 # If result contains non-JSON-serializable data, skip structuredContent
